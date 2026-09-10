@@ -40,6 +40,10 @@
 #   notebook 07, then reads its outputs back for plotting.
 ################################################################################
 
+## ---- Shared helpers (R/utils.R) ----
+repo_dir <- "."  # EDIT: path to the root of this repository
+source(file.path(repo_dir, "R", "utils.R"))
+
 ## ---- Libraries (unique & sufficient) ----
 library(dplyr)
 library(Seurat)
@@ -93,23 +97,13 @@ DimPlot(sample, reduction = 'rna.umap', group.by = 'RNA_snn_res.0.7',
         cols = paletteDiscrete(unique(sample$RNA_snn_res.0.7), set = "stallion"))
 
 # Annotate states
-fun <- function(x) {
-  if (x == "0") "Fib2"
-  else if (x == "1") "SMC2"
-  else if (x == "2") "SMC1"
-  else if (x == "3") "Fib5"
-  else if (x == "4") "SMC3"
-  else if (x == "5") "CMC"
-  else if (x == "6") "FMC"
-  else if (x == "7") "Fib1"
-  else if (x == "8") "Pericyte"
-  else if (x == "9") "Fib6"
-  else if (x == "10") "Fib4"
-  else if (x == "11") "Fib7"
-  else if (x == "12") "SMC4"
-  else if (x == "13") "Fib3"
-}
-sample$cell.state <- mapply(fun, sample$RNA_snn_res.0.7)
+cell_state_labels <- c(
+  "0" = "Fib2", "1" = "SMC2", "2" = "SMC1", "3" = "Fib5",
+  "4" = "SMC3", "5" = "CMC", "6" = "FMC", "7" = "Fib1",
+  "8" = "Pericyte", "9" = "Fib6", "10" = "Fib4", "11" = "Fib7",
+  "12" = "SMC4", "13" = "Fib3"
+)
+sample$cell.state <- annotate_clusters(sample$RNA_snn_res.0.7, cell_state_labels)
 sample$cell.state <- factor(sample$cell.state,
   levels = c("Pericyte","SMC1","SMC2","SMC3","SMC4","FMC","CMC","Fib1","Fib2","Fib3","Fib4","Fib5","Fib6","Fib7"))
 
@@ -198,13 +192,8 @@ DimPlot(owens_SMC, reduction = "ref.umap", group.by = "orig.cell",
   scale_colour_manual(values = c("blue","grey","grey"), na.value = "grey")
 
 owens_SMC$SEURATPROJECT <- "SMCs"
-ggplot(owens_SMC@meta.data, aes(x = SEURATPROJECT, fill = predicted.celltype)) +
-  geom_bar(position = "fill") + theme_linedraw() +
-  theme(axis.text.x = element_text(angle = 90)) +
-  scale_fill_manual(values = c("#D51F26","#272E6A","#208A42","#89288F","#8A9FD1","#C06CAB")) +
-  theme(axis.line = element_line(colour = "black"),
-        panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-        panel.background = element_blank())
+plot_composition(owens_SMC@meta.data, x = "SEURATPROJECT", fill = "predicted.celltype",
+                 colors = c("#D51F26","#272E6A","#208A42","#89288F","#8A9FD1","#C06CAB"))
 
 table(owens_SMC$predicted.celltype, owens_SMC$orig.cell)
 
@@ -426,10 +415,7 @@ DefaultAssay(sample) <- "RNA"
 # SMC signature
 expdata <- GetAssayData(sample)
 Pop1 <- c("ACTA2","CNN1","MYL9","TPM2","MYH11","TAGLN","SOST","PPP1R14A","COL18A1","ITIH4")
-zz <- which(tolower(rownames(expdata)) %in% tolower(Pop1))
-geneExp <- as.matrix(expdata[zz, ])
-geneExp <- t(scale(t(geneExp))); geneExp[is.nan(geneExp)] <- 0
-sample@meta.data$SMC <- colSums(geneExp) / length(zz)
+sample@meta.data$SMC <- gene_set_zscore(expdata, Pop1)
 FeaturePlot(sample, features = "SMC", reduction = 'rna.umap') +
   scale_color_gradientn(colors = c("blue","turquoise2","yellow","red","red4"),
                         oob = scales::squish, limits = c(0,1))
@@ -437,10 +423,7 @@ plot_density(sample, features = "RUNX1", reduction = 'rna.umap')
 
 # Chondrocyte-like score
 Pop1 <- c("OMD","LUM","HAPLN1","COMP","FMOD","FAP","ITGA10","COL8A1","RUNX1","LTBP2","ENPP1")
-zz <- which(tolower(rownames(expdata)) %in% tolower(Pop1))
-geneExp <- as.matrix(expdata[zz, ])
-geneExp <- t(scale(t(geneExp))); geneExp[is.nan(geneExp)] <- 0
-sample@meta.data$chondro <- colSums(geneExp) / length(zz)
+sample@meta.data$chondro <- gene_set_zscore(expdata, Pop1)
 FeaturePlot(sample, features = "chondro", reduction = 'rna.umap') +
   scale_color_gradientn(colors = c("blue","turquoise2","yellow","red","red4"),
                         oob = scales::squish, limits = c(0,1))
@@ -462,10 +445,7 @@ expdata <- GetAssayData(sample)
 Pop1 <- c("MMP12","IL1B","PTGS2","EREG","CCL5","IL1A","CXCL3","CXCL8","EDNRB","STC1",
           "HMOX1","AKR1C2","MMP1","DUSP6","NAMPT","CXCL2","AKR1C1","SERPINB2","FADS1",
           "THBD","ADAMTS4","PLIN2","MT2A","LIF","AKR1B1")
-zz <- which(tolower(rownames(expdata)) %in% tolower(Pop1))
-geneExp <- as.matrix(expdata[zz, ])
-geneExp <- t(scale(t(geneExp))); geneExp[is.nan(geneExp)] <- 0
-sample@meta.data$IPCOX <- colSums(geneExp) / length(zz)
+sample@meta.data$IPCOX <- gene_set_zscore(expdata, Pop1)
 FeaturePlot(sample, features = "IPCOX", reduction = 'rna.umap') +
   scale_color_gradientn(colors = c("blue","turquoise2","yellow","red","red4"),
                         oob = scales::squish, limits = c(0,0.5))

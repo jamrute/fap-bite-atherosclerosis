@@ -25,6 +25,10 @@
 #   Interactive analysis script: run section by section (e.g. in RStudio).
 ################################################################################
 
+## ---- Shared helpers (R/utils.R) ----
+repo_dir <- "."  # EDIT: path to the root of this repository
+source(file.path(repo_dir, "R", "utils.R"))
+
 ## ---- Libraries (unique + sufficient) ----
 library(Seurat)        # core single-cell workflow
 library(ggplot2)       # plotting
@@ -69,27 +73,14 @@ unique(mydata$sample)
 ## 2) Map sample codes to experimental conditions; subset to SMC samples
 ## ==========================================================
 # Map sample integers ("1".."18") to conditions
-fun <- function(x) {
-  if (x == "1")  {"wt_SMC_baseline"}
-  else if (x == "2")  {"wt_nonSMC_baseline"}
-  else if (x == "3")  {"wt_SMC_baseline"}
-  else if (x == "4")  {"wt_nonSMC_baseline"}
-  else if (x == "5")  {"wt_SMC_8wk"}
-  else if (x == "6")  {"wt_nonSMC_8wk"}
-  else if (x == "7")  {"wt_SMC_8wk"}
-  else if (x == "8")  {"wt_nonSMC_8wk"}
-  else if (x == "9")  {"ko_SMC_8wk"}
-  else if (x == "10") {"ko_nonSMC_8wk"}
-  else if (x == "11") {"wt_SMC_16wk"}
-  else if (x == "12") {"wt_nonSMC_16wk"}
-  else if (x == "13") {"ko_SMC_16wk"}
-  else if (x == "14") {"ko_nonSMC_16wk"}
-  else if (x == "15") {"wt_SMC_16wk"}
-  else if (x == "16") {"ko_SMC_16wk"}
-  else if (x == "17") {"ko_SMC_16wk"}
-  else if (x == "18") {"ko_nonSMC_16wk"}
-}
-mydata$condition <- mapply(fun, mydata$sample)
+mydata_condition_labels <- c(
+  "1" = "wt_SMC_baseline", "2" = "wt_nonSMC_baseline", "3" = "wt_SMC_baseline", "4" = "wt_nonSMC_baseline",
+  "5" = "wt_SMC_8wk", "6" = "wt_nonSMC_8wk", "7" = "wt_SMC_8wk", "8" = "wt_nonSMC_8wk",
+  "9" = "ko_SMC_8wk", "10" = "ko_nonSMC_8wk", "11" = "wt_SMC_16wk", "12" = "wt_nonSMC_16wk",
+  "13" = "ko_SMC_16wk", "14" = "ko_nonSMC_16wk", "15" = "wt_SMC_16wk", "16" = "ko_SMC_16wk",
+  "17" = "ko_SMC_16wk", "18" = "ko_nonSMC_16wk"
+)
+mydata$condition <- annotate_clusters(mydata$sample, mydata_condition_labels)
 
 # Keep SMC lineage-traced samples only
 Idents(mydata) <- "condition"
@@ -182,16 +173,8 @@ DimPlot(
 )
 
 # Composition per condition
-ggplot(mouse_coronary_new@meta.data,
-       aes(x = condition, fill = predicted.celltype)) +
-  geom_bar(position = "fill") +
-  theme_linedraw() +
-  theme(axis.text.x = element_text(angle = 90)) +
-  scale_fill_manual(values = paletteDiscrete(unique(sample$cell.state), set = "stallion")) +
-  theme(axis.line = element_line(colour = "black"),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank())
+plot_composition(mouse_coronary_new@meta.data, x = "condition", fill = "predicted.celltype",
+                 colors = paletteDiscrete(unique(sample$cell.state), set = "stallion"))
 
 # Example feature summaries
 DotPlot(mouse_coronary_new, features = "FAP", group.by = "condition") + RotatedAxis()

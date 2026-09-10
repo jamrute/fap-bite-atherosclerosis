@@ -31,6 +31,10 @@
 #   starCAT is run through system(); requires a Python environment with starCAT.
 ################################################################################
 
+## ---- Shared helpers (R/utils.R) ----
+repo_dir <- "."  # EDIT: path to the root of this repository
+source(file.path(repo_dir, "R", "utils.R"))
+
 ## ---- Libraries (unique + sufficient) ----
 library(Seurat)
 library(ggplot2)
@@ -132,16 +136,8 @@ DimPlot(TCells, reduction = 'umap', label = FALSE, repel = TRUE, label.size = 2.
         ncol = 2)
 
 # Composition of subclusters by condition
-ggplot(TCells@meta.data,
-       aes(x = condition, fill = SCT_snn_res.0.4)) +
-  geom_bar(position = "fill") +
-  theme_linedraw() +
-  theme(axis.text.x = element_text(angle = 90)) +
-  scale_fill_manual(values = as.vector(paletteDiscrete(unique(TCells$SCT_snn_res.0.4), set = "stallion"))) +
-  theme(axis.line = element_line(colour = "black"),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank())
+plot_composition(TCells@meta.data, x = "condition", fill = "SCT_snn_res.0.4",
+                 colors = as.vector(paletteDiscrete(unique(TCells$SCT_snn_res.0.4), set = "stallion")))
 
 # DGE within T cell subclusters
 Idents(TCells) <- "SCT_snn_res.0.4"
@@ -248,14 +244,8 @@ FeaturePlot(TCells, reduction = 'umap', features = "starCat_Proliferation") +
                         oob = scales::squish, limits = c(0,0.1))
 
 # Composition of ASA-positive per subcluster
-ggplot(TCells@meta.data, aes(x = SCT_snn_res.0.4, fill = starCat_ASA_binary)) +
-  geom_bar(position = "fill") + theme_linedraw() +
-  theme(axis.text.x = element_text(angle = 90)) +
-  scale_fill_manual(values = c("gray","red")) +
-  theme(axis.line = element_line(colour = "black"),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank())
+plot_composition(TCells@meta.data, x = "SCT_snn_res.0.4", fill = "starCat_ASA_binary",
+                 colors = c("gray","red"))
 
 # Violin of ASA score by condition
 VlnPlot(TCells, features = "starCat_ASA", group.by = "condition", ncol = 2)
@@ -315,11 +305,8 @@ dev.off()
 ############################################################
 ## TCR: load contigs, combine, and repertoire visualizations
 ############################################################
-# NOTE: `tcells` is not created in this script. Uncomment the next line to use
-# the T-cell object defined above:
-# tcells <- TCells
-
-Idents(tcells) <- "condition"  # (will error if `tcells` not defined)
+tcells <- TCells  # T-cell object (with starCAT and module scores) from above
+Idents(tcells) <- "condition"
 TCells_Control   <- subset(tcells, idents = "Control")
 TCells_FAP_BiTE  <- subset(tcells, idents = "FAP_BiTE")
 
@@ -437,23 +424,11 @@ pheatmap(heatmap_matrix, color = viridis::viridis(100),
          main = "Clone Size Distribution Across T Cell States")
 
 # Compositions
-ggplot(seurat@meta.data, aes(x = cloneSize, fill = SCT_snn_res.0.4)) +
-  geom_bar(position = "fill") + theme_linedraw() +
-  theme(axis.text.x = element_text(angle = 90)) +
-  scale_fill_manual(values = as.vector(paletteDiscrete(unique(seurat$SCT_snn_res.0.4), set = "stallion"))) +
-  theme(axis.line = element_line(colour = "black"),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank())
+plot_composition(seurat@meta.data, x = "cloneSize", fill = "SCT_snn_res.0.4",
+                 colors = as.vector(paletteDiscrete(unique(seurat$SCT_snn_res.0.4), set = "stallion")))
 
-ggplot(seurat@meta.data, aes(x = condition, fill = cloneSize)) +
-  geom_bar(position = "fill") + theme_linedraw() +
-  theme(axis.text.x = element_text(angle = 90)) +
-  scale_fill_manual(values = as.vector(paletteDiscrete(unique(seurat$cloneSize), set = "stallion"))) +
-  theme(axis.line = element_line(colour = "black"),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank())
+plot_composition(seurat@meta.data, x = "condition", fill = "cloneSize",
+                 colors = as.vector(paletteDiscrete(unique(seurat$cloneSize), set = "stallion")))
 
 # Exhaustion score vs clone size
 pdf("./Exhaustion_violin.pdf", useDingbats = FALSE, width = 6, height = 4)
@@ -464,10 +439,8 @@ dev.off()
 saveRDS(seurat, "./Tcells/Tcells_TCR.rds")
 
 ############################################################
-## Additional panels (use `tcells`; see NOTE above)
+## Additional panels
 ############################################################
-# NOTE: the following use `tcells` which is not defined above; if needed:
-# tcells <- TCells
 
 pdf("./Tcell_dotplot.pdf", useDingbats = FALSE, width = 11, height = 3)
 DotPlot(tcells,

@@ -28,6 +28,10 @@
 #   Interactive analysis script: run section by section (e.g. in RStudio).
 ################################################################################
 
+## ---- Shared helpers (R/utils.R) ----
+repo_dir <- "."  # EDIT: path to the root of this repository
+source(file.path(repo_dir, "R", "utils.R"))
+
 #########################################
 # Libraries
 #########################################
@@ -302,15 +306,8 @@ DimPlot(mouse_coronary_new, reduction = "ref.umap", group.by = "predicted.cellty
         label = FALSE, split.by = "condition")
 
 # Stacked bar chart of predicted cell types per condition
-ggplot(mouse_coronary_new@meta.data, aes(x = condition, fill = predicted.celltype)) +
-  geom_bar(position = "fill") +
-  theme_linedraw() +
-  theme(axis.text.x = element_text(angle = 90)) +
-  scale_fill_manual(values = paletteDiscrete(unique(human_coronary$cell.state), set = "stallion")) +
-  theme(axis.line = element_line(colour = "black"),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank())
+plot_composition(mouse_coronary_new@meta.data, x = "condition", fill = "predicted.celltype",
+                 colors = paletteDiscrete(unique(human_coronary$cell.state), set = "stallion"))
 
 #########################################
 # DE across conditions on the mapped object (RNA assay)
@@ -342,20 +339,8 @@ reg %>%
 DefaultAssay(ref) <- "RNA"
 expdata <- GetAssayData(ref)
 Pop1 <- prog_top10$gene
-pops <- list(Pop1)
-
 # Progression signature score
-z_scores <- NULL
-for (i in 1:length(pops)) {
-  genes <- pops[[i]]
-  zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
-  av <- numeric(ncol(expdata))
-  geneExp <- as.matrix(expdata[zz, ])
-  geneExp <- t(scale(t(geneExp)))
-  geneExp[is.nan(geneExp)] <- 0
-  z_scores <- rbind(z_scores, (av + colSums(geneExp) / length(zz)))
-}
-ref@meta.data$progression <- z_scores[1,]
+ref@meta.data$progression <- gene_set_zscore(expdata, Pop1)
 FeaturePlot(object = ref, features = "progression", reduction = 'rna.umap') +
   scale_color_gradientn(colors = c("blue","turquoise2","yellow","red","red4"),
                         oob = scales::squish, limits = c(0, 0.5))
@@ -364,19 +349,7 @@ FeaturePlot(object = ref, features = "progression", reduction = 'rna.umap') +
 DefaultAssay(ref) <- "RNA"
 expdata <- GetAssayData(ref)
 Pop1 <- reg_top10$gene
-pops <- list(Pop1)
-
-z_scores <- NULL
-for (i in 1:length(pops)) {
-  genes <- pops[[i]]
-  zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
-  av <- numeric(ncol(expdata))
-  geneExp <- as.matrix(expdata[zz, ])
-  geneExp <- t(scale(t(geneExp)))
-  geneExp[is.nan(geneExp)] <- 0
-  z_scores <- rbind(z_scores, (av + colSums(geneExp) / length(zz)))
-}
-ref@meta.data$regression <- z_scores[1,]
+ref@meta.data$regression <- gene_set_zscore(expdata, Pop1)
 FeaturePlot(object = ref, features = "regression", reduction = 'rna.umap') +
   scale_color_gradientn(colors = c("blue","turquoise2","yellow","red","red4"),
                         oob = scales::squish, limits = c(0, 1))
@@ -398,19 +371,7 @@ VlnPlot(ref, features = "reg_minus_prog", group.by = "cell.state", sort = TRUE, 
 DefaultAssay(myeloid) <- "SCT"
 expdata <- GetAssayData(myeloid)
 Pop1 <- c("Spp1","Cd74","Ftl1","Ctsd","Ctsb","H2-Aa","Apoe","Timp1","Laptm5","Fth1","C1qc","Psap")
-pops <- list(Pop1)
-
-z_scores <- NULL
-for (i in 1:length(pops)) {
-  genes <- pops[[i]]
-  zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
-  av <- numeric(ncol(expdata))
-  geneExp <- as.matrix(expdata[zz, ])
-  geneExp <- t(scale(t(geneExp)))
-  geneExp[is.nan(geneExp)] <- 0
-  z_scores <- rbind(z_scores, (av + colSums(geneExp) / length(zz)))
-}
-myeloid@meta.data$FoamNiche <- z_scores[1,]
+myeloid@meta.data$FoamNiche <- gene_set_zscore(expdata, Pop1)
 
 # Plot FoamNiche by condition (PDF output)
 pdf("./FoamNiche_mouse_regression.pdf", useDingbats = FALSE, width = 4.3, height = 2.8)
@@ -423,18 +384,6 @@ dev.off()
 DefaultAssay(sample) <- "SCT"
 expdata <- GetAssayData(sample)
 Pop1 <- c("SPP1","CD74","FTL","CTSD","CTSB","HLA-DRA","APOE","TIMP1","LAPTM5","FTH1","C1QC","PSAP")
-pops <- list(Pop1)
-
-z_scores <- NULL
-for (i in 1:length(pops)) {
-  genes <- pops[[i]]
-  zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
-  av <- numeric(ncol(expdata))
-  geneExp <- as.matrix(expdata[zz, ])
-  geneExp <- t(scale(t(geneExp)))
-  geneExp[is.nan(geneExp)] <- 0
-  z_scores <- rbind(z_scores, (av + colSums(geneExp) / length(zz)))
-}
-sample@meta.data$Niche5 <- z_scores[1,]
+sample@meta.data$Niche5 <- gene_set_zscore(expdata, Pop1)
 
 # End of script

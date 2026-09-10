@@ -21,6 +21,10 @@ and PROGENy, prepares input for Palantir, and maps mouse SMCs onto the stromal r
 **Run order.** Upstream: `03_global_wnn_annotation.R`. Downstream: `06`, `07`.
 
 ```{r}
+## ---- Shared helpers (R/utils.R) ----
+repo_dir <- "."  # EDIT: path to the root of this repository
+source(file.path(repo_dir, "R", "utils.R"))
+
 library(dplyr)
 library(Seurat)
 library(patchwork)
@@ -45,10 +49,8 @@ global <- readRDS(global_rds)
 ```
 
 ```{r}
-ggplot(global@meta.data, aes(x=Race, fill=cell.type)) + geom_bar(position = "fill") + theme_linedraw() + theme(axis.text.x = element_text(angle = 90)) +  scale_fill_manual(values=as.vector(paletteDiscrete(unique(global$cell.type), set = "stallion"))) + theme(axis.line = element_line(colour = "black"),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    panel.background = element_blank()) 
+plot_composition(global@meta.data, x = "Race", fill = "cell.type",
+                 colors = as.vector(paletteDiscrete(unique(global$cell.type), set = "stallion"))) 
 ```
 
 ```{r}
@@ -189,21 +191,7 @@ DotPlot(sample, features = unique(genes), group.by = "RNA_snn_res.0.3", col.min=
 DefaultAssay(sample) <- "RNA"
 expdata <- GetAssayData(sample)
 Pop1 <- c("CNN1","SMTN","ACTA2","TAGLN","MYH11","MYOCD")
-pops<-list(Pop1)
-#Z-Scores
-z_scores<-NULL
-
-for (i in 1:length(pops)) {
-genes <- pops[[i]]
-zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
-av <- numeric(ncol(expdata))
-
-geneExp <- as.matrix(expdata[zz, ])
-geneExp <- t(scale(t(geneExp)))
-geneExp[is.nan(geneExp)] <- 0
-z_scores <- rbind(z_scores,(av + colSums(geneExp) / length(zz)))
-}
-sample@meta.data$contractile_z<-z_scores[1,]
+sample@meta.data$contractile_z <- gene_set_zscore(expdata, Pop1)
 FeaturePlot(object=sample, features = "contractile_z",reduction = 'rna.umap') + scale_color_gradientn(colors=c("blue","turquoise2","yellow","red","red4"), oob=scales::squish, limits=c(0,1))
 ```
 
@@ -212,21 +200,7 @@ FeaturePlot(object=sample, features = "contractile_z",reduction = 'rna.umap') + 
 DefaultAssay(sample) <- "RNA"
 expdata <- GetAssayData(sample)
 Pop1 <- c("KLF4","CD34","CD44","SCA1","LY6A")
-pops<-list(Pop1)
-#Z-Scores
-z_scores<-NULL
-
-for (i in 1:length(pops)) {
-genes <- pops[[i]]
-zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
-av <- numeric(ncol(expdata))
-
-geneExp <- as.matrix(expdata[zz, ])
-geneExp <- t(scale(t(geneExp)))
-geneExp[is.nan(geneExp)] <- 0
-z_scores <- rbind(z_scores,(av + colSums(geneExp) / length(zz)))
-}
-sample@meta.data$mesenchymal_z<-z_scores[1,]
+sample@meta.data$mesenchymal_z <- gene_set_zscore(expdata, Pop1)
 FeaturePlot(object=sample, features = "mesenchymal_z",reduction = 'rna.umap') + scale_color_gradientn(colors=c("blue","turquoise2","yellow","red","red4"), oob=scales::squish, limits=c(0,1))
 ```
 
@@ -235,21 +209,7 @@ FeaturePlot(object=sample, features = "mesenchymal_z",reduction = 'rna.umap') + 
 DefaultAssay(sample) <- "RNA"
 expdata <- GetAssayData(sample)
 Pop1 <- c("FN1","BGN","DCN","COL1A1")
-pops<-list(Pop1)
-#Z-Scores
-z_scores<-NULL
-
-for (i in 1:length(pops)) {
-genes <- pops[[i]]
-zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
-av <- numeric(ncol(expdata))
-
-geneExp <- as.matrix(expdata[zz, ])
-geneExp <- t(scale(t(geneExp)))
-geneExp[is.nan(geneExp)] <- 0
-z_scores <- rbind(z_scores,(av + colSums(geneExp) / length(zz)))
-}
-sample@meta.data$fibroblast_z<-z_scores[1,]
+sample@meta.data$fibroblast_z <- gene_set_zscore(expdata, Pop1)
 FeaturePlot(object=sample, features = "fibroblast_z",reduction = 'rna.umap') + scale_color_gradientn(colors=c("blue","turquoise2","yellow","red","red4"), oob=scales::squish, limits=c(0,1))
 ```
 
@@ -258,21 +218,7 @@ FeaturePlot(object=sample, features = "fibroblast_z",reduction = 'rna.umap') + s
 DefaultAssay(sample) <- "RNA"
 expdata <- GetAssayData(sample)
 Pop1 <- c("PTPRC","CD68","ITGAM","LGALS3","ADGRE1")
-pops<-list(Pop1)
-#Z-Scores
-z_scores<-NULL
-
-for (i in 1:length(pops)) {
-genes <- pops[[i]]
-zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
-av <- numeric(ncol(expdata))
-
-geneExp <- as.matrix(expdata[zz, ])
-geneExp <- t(scale(t(geneExp)))
-geneExp[is.nan(geneExp)] <- 0
-z_scores <- rbind(z_scores,(av + colSums(geneExp) / length(zz)))
-}
-sample@meta.data$macrophage_z<-z_scores[1,]
+sample@meta.data$macrophage_z <- gene_set_zscore(expdata, Pop1)
 FeaturePlot(object=sample, features = "macrophage_z",reduction = 'rna.umap') + scale_color_gradientn(colors=c("blue","turquoise2","yellow","red","red4"), oob=scales::squish, limits=c(0,1))
 ```
 # 5. Osteogenic
@@ -280,21 +226,7 @@ FeaturePlot(object=sample, features = "macrophage_z",reduction = 'rna.umap') + s
 DefaultAssay(sample) <- "RNA"
 expdata <- GetAssayData(sample)
 Pop1 <- c("SP7","SOX9","MSX2","RUNX2")
-pops<-list(Pop1)
-#Z-Scores
-z_scores<-NULL
-
-for (i in 1:length(pops)) {
-genes <- pops[[i]]
-zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
-av <- numeric(ncol(expdata))
-
-geneExp <- as.matrix(expdata[zz, ])
-geneExp <- t(scale(t(geneExp)))
-geneExp[is.nan(geneExp)] <- 0
-z_scores <- rbind(z_scores,(av + colSums(geneExp) / length(zz)))
-}
-sample@meta.data$osteogenic_z<-z_scores[1,]
+sample@meta.data$osteogenic_z <- gene_set_zscore(expdata, Pop1)
 FeaturePlot(object=sample, features = "osteogenic_z",reduction = 'rna.umap') + scale_color_gradientn(colors=c("blue","turquoise2","yellow","red","red4"), oob=scales::squish, limits=c(0,1))
 ```
 # 6. Adipocyte
@@ -302,21 +234,7 @@ FeaturePlot(object=sample, features = "osteogenic_z",reduction = 'rna.umap') + s
 DefaultAssay(sample) <- "RNA"
 expdata <- GetAssayData(sample)
 Pop1 <- c("UCP1","ELOVL3","ADIPOQ","PRDM16","PPARGC1A")
-pops<-list(Pop1)
-#Z-Scores
-z_scores<-NULL
-
-for (i in 1:length(pops)) {
-genes <- pops[[i]]
-zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
-av <- numeric(ncol(expdata))
-
-geneExp <- as.matrix(expdata[zz, ])
-geneExp <- t(scale(t(geneExp)))
-geneExp[is.nan(geneExp)] <- 0
-z_scores <- rbind(z_scores,(av + colSums(geneExp) / length(zz)))
-}
-sample@meta.data$adipocyte_z<-z_scores[1,]
+sample@meta.data$adipocyte_z <- gene_set_zscore(expdata, Pop1)
 FeaturePlot(object=sample, features = "adipocyte_z",reduction = 'rna.umap') + scale_color_gradientn(colors=c("blue","turquoise2","yellow","red","red4"), oob=scales::squish, limits=c(0,1))
 ```
 # Pathway analysis across clusters

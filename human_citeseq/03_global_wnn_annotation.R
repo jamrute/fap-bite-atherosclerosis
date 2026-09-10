@@ -32,6 +32,10 @@
 #   Downstream scripts read the annotated object as `integrated_annotated.rds`.
 ################################################################################
 
+## ---- Shared helpers (R/utils.R) ----
+repo_dir <- "."  # EDIT: path to the root of this repository
+source(file.path(repo_dir, "R", "utils.R"))
+
 ## ---- Libraries (unique + used here) ----
 library(Seurat)       # core single-cell workflow (WNN, UMAP, clustering, markers)
 library(SeuratDisk)   # Save/Convert Seurat <-> h5ad
@@ -87,26 +91,14 @@ DimPlot(cor, reduction = 'sct.dsb_wnn_umap',  group.by = 'SCT_snn_res.0.2', labe
 ## ============================================================
 ## Annotate global clusters (SCT_snn_res.0.2) -> cell.type
 ## ============================================================
-fun <- function(x) {
-  if (x == "0") {"TCells"} 
-  else if (x == "1") {"Myeloid"}
-  else if (x == "2") {"SMCPericyte"}
-  else if (x == "3") {"Endothelium"}
-  else if (x == "4") {"TCells"}
-  else if (x == "5") {"Fibroblast1"}
-  else if (x == "6") {"BCells"}
-  else if (x == "7") {"Fibroblast2"}
-  else if (x == "8") {"TCells"}
-  else if (x == "9") {"ModSMC"}
-  else if (x == "10") {"Mast"}
-  else if (x == "11") {"Glia"}
-  else if (x == "12") {"Lymphatic"}
-  else if (x == "13") {"PlasmaCells"}
-  else if (x == "14") {"Proliferating"}
-  else if (x == "15") {"pDC"}
-  else if (x == "16") {"Myeloid"}
-}
-cor$cell.type <- mapply(fun, cor$SCT_snn_res.0.2)
+cell_type_labels <- c(
+  "0" = "TCells", "1" = "Myeloid", "2" = "SMCPericyte", "3" = "Endothelium",
+  "4" = "TCells", "5" = "Fibroblast1", "6" = "BCells", "7" = "Fibroblast2",
+  "8" = "TCells", "9" = "ModSMC", "10" = "Mast", "11" = "Glia",
+  "12" = "Lymphatic", "13" = "PlasmaCells", "14" = "Proliferating", "15" = "pDC",
+  "16" = "Myeloid"
+)
+cor$cell.type <- annotate_clusters(cor$SCT_snn_res.0.2, cell_type_labels)
 
 cor$cell.type <- factor(
   cor$cell.type,
@@ -163,59 +155,23 @@ plot_density(cor, features = "ITGA9", reduction = 'rna.umap')
 ## ============================================================
 ## Cell-type composition by sample and clinical metadata
 ## ============================================================
-ggplot(cor@meta.data, aes(x = sampleID, fill = cell.type)) +
-  geom_bar(position = "fill") + theme_linedraw() +
-  theme(axis.text.x = element_text(angle = 90)) +
-  scale_fill_manual(values = as.vector(paletteDiscrete(unique(cor$cell.type), set = "stallion"))) +
-  theme(axis.line = element_line(colour = "black"),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank())
+plot_composition(cor@meta.data, x = "sampleID", fill = "cell.type",
+                 colors = as.vector(paletteDiscrete(unique(cor$cell.type), set = "stallion")))
 
-ggplot(cor@meta.data, aes(x = AgeRange, fill = cell.type)) +
-  geom_bar(position = "fill") + theme_linedraw() +
-  theme(axis.text.x = element_text(angle = 90)) +
-  scale_fill_manual(values = as.vector(paletteDiscrete(unique(cor$cell.type), set = "stallion"))) +
-  theme(axis.line = element_line(colour = "black"),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank())
+plot_composition(cor@meta.data, x = "AgeRange", fill = "cell.type",
+                 colors = as.vector(paletteDiscrete(unique(cor$cell.type), set = "stallion")))
 
-ggplot(cor@meta.data, aes(x = Disease, fill = cell.type)) +
-  geom_bar(position = "fill") + theme_linedraw() +
-  theme(axis.text.x = element_text(angle = 90)) +
-  scale_fill_manual(values = as.vector(paletteDiscrete(unique(cor$cell.type), set = "stallion"))) +
-  theme(axis.line = element_line(colour = "black"),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank())
+plot_composition(cor@meta.data, x = "Disease", fill = "cell.type",
+                 colors = as.vector(paletteDiscrete(unique(cor$cell.type), set = "stallion")))
 
-ggplot(cor@meta.data, aes(x = Stent, fill = cell.type)) +
-  geom_bar(position = "fill") + theme_linedraw() +
-  theme(axis.text.x = element_text(angle = 90)) +
-  scale_fill_manual(values = as.vector(paletteDiscrete(unique(cor$cell.type), set = "stallion"))) +
-  theme(axis.line = element_line(colour = "black"),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank())
+plot_composition(cor@meta.data, x = "Stent", fill = "cell.type",
+                 colors = as.vector(paletteDiscrete(unique(cor$cell.type), set = "stallion")))
 
-ggplot(cor@meta.data, aes(x = HF, fill = cell.type)) +
-  geom_bar(position = "fill") + theme_linedraw() +
-  theme(axis.text.x = element_text(angle = 90)) +
-  scale_fill_manual(values = as.vector(paletteDiscrete(unique(cor$cell.type), set = "stallion"))) +
-  theme(axis.line = element_line(colour = "black"),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank())
+plot_composition(cor@meta.data, x = "HF", fill = "cell.type",
+                 colors = as.vector(paletteDiscrete(unique(cor$cell.type), set = "stallion")))
 
-ggplot(cor@meta.data, aes(x = Sex, fill = cell.type)) +
-  geom_bar(position = "fill") + theme_linedraw() +
-  theme(axis.text.x = element_text(angle = 90)) +
-  scale_fill_manual(values = as.vector(paletteDiscrete(unique(cor$cell.type), set = "stallion"))) +
-  theme(axis.line = element_line(colour = "black"),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank())
+plot_composition(cor@meta.data, x = "Sex", fill = "cell.type",
+                 colors = as.vector(paletteDiscrete(unique(cor$cell.type), set = "stallion")))
 
 ## ============================================================
 ## Export h5Seurat/h5ad for Scanpy; keep SCT model median_umi

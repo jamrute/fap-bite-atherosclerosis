@@ -2,6 +2,7 @@
 
 [![Paper](https://img.shields.io/badge/Science-10.1126%2Fscience.adx1736-B31B1B)](https://doi.org/10.1126/science.adx1736)
 [![Preprint](https://img.shields.io/badge/bioRxiv-10.1101%2F2025.03.03.641211-BD2736)](https://doi.org/10.1101/2025.03.03.641211)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Analysis code for **Amrute *et al.*, *Science* 392, eadx1736 (2026)**.
 
@@ -25,13 +26,17 @@ stromal–immune microenvironment through T cell clonal expansion.
 │   ├── visium/                 Visium FFPE: Tangram deconvolution, meta-programs, niches
 │   └── xenium/                 Xenium: single-cell spatial mapping and cell morphology
 ├── mouse_bite/                 Anti-FAP BiTE treatment in mouse atherosclerosis
+├── R/                          Shared helper functions (utils.R)
 ├── environment/                R package installer and conda environments
 ├── archive/                    Superseded material kept for provenance
-└── CITATION.cff
+├── CITATION.cff
+└── LICENSE
 ```
 
 Scripts are numbered in run order within each folder. Every script begins with a header describing
-its purpose, inputs, outputs, and upstream/downstream scripts.
+its purpose, inputs, outputs, and upstream/downstream scripts. Operations repeated across scripts
+(gene-set z-scores, cluster annotation, composition plots, DE table import) live in tested helper
+functions in [`R/utils.R`](R/utils.R).
 
 ## Analyses
 
@@ -146,8 +151,10 @@ The scripts are interactive analyses written to be run section by section (for e
 following the order in the tables above. Before running a script:
 
 1. Download the relevant data (see [Data availability](#data-availability)).
-2. Edit the lines marked `# EDIT` to point to your local data and intermediate objects.
-3. Check the script header for the inputs it expects from upstream scripts.
+2. Set `repo_dir` at the top of the script to the root of this repository (scripts `source()`
+   the shared helpers in `R/utils.R`).
+3. Edit the other lines marked `# EDIT` to point to your local data and intermediate objects.
+4. Check the script header for the inputs it expects from upstream scripts.
 
 Intermediate objects (`.rds`, `.h5ad`, `.h5Seurat`) are written to the working directory and are
 not tracked in this repository.
@@ -156,15 +163,14 @@ not tracked in this repository.
 
 If you use this code, please cite:
 
-> Amrute JM, Jung I-H, Yamawaki T, *et al.* Targeting modulated vascular smooth muscle cells in
+> Amrute JM, Jung I-H, *et al.* Targeting modulated vascular smooth muscle cells in
 > atherosclerosis via FAP-directed immunotherapy. *Science* **392**, eadx1736 (2026).
 > https://doi.org/10.1126/science.adx1736
 
 ```bibtex
 @article{Amrute2026FAP,
   title   = {Targeting modulated vascular smooth muscle cells in atherosclerosis via {FAP}-directed immunotherapy},
-  author  = {Amrute, J. M. and Jung, I.-H. and Yamawaki, T. and Lin, W.-L. and Bredemeyer, A. and
-             Diekmann, J. and Hayat, S. and Zhang, X. and Wakefield, D. L. and Luo, X. and others},
+  author  = {Amrute, J. M. and Jung, I.-H. and others},
   journal = {Science},
   volume  = {392},
   pages   = {eadx1736},
@@ -172,6 +178,10 @@ If you use this code, please cite:
   doi     = {10.1126/science.adx1736}
 }
 ```
+
+## License
+
+This code is released under the [MIT License](LICENSE).
 
 ## Contact
 

@@ -287,8 +287,7 @@ if (file.exists(ref_my_path)) {
   Myeloid <- RunUMAP(Myeloid, dims = 1:50)
   RidgePlot(Myeloid, features = "prediction.score.max", group.by = "orig.ident")
 
-  # NOTE: same file name as the stroma UMAP above, so this overwrites it
-  safe_pdf("mapped_stroma_cell.state_umap.pdf", 7, 5, {
+  safe_pdf("mapped_Myeloid_cell.state_umap.pdf", 7, 5, {
     DimPlot(Myeloid, group.by = "predicted.celltype", cols = pal_disc(reference$cell.state))
   })
 
