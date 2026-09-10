@@ -1,12 +1,29 @@
-############################################################
-# GWAS–DGE overlap analysis (deduped libraries + comments)
-# - Keeps your original logic
-# - Removes duplicate/unused library calls
-# - Adds clear, step-by-step comments
-############################################################
+################################################################################
+# CAD GWAS genes: overlap with cell-type marker genes
+#
+# Paper : Amrute et al., Science (2026) | doi:10.1126/science.adx1736
+# Part  : Human coronary artery CITE-seq atlas
+#
+# Purpose
+#   Intersects significant cell-type marker genes (FDR < 0.05) with genes
+#   linked to coronary artery disease GWAS loci and plots the number of
+#   overlapping genes per cell type.
+#
+# Inputs
+#   DE_SCT_cell.type.csv  (from 03_global_wnn_annotation.R)
+#   cad_gwas_genes.txt  (CAD GWAS gene list, one column `gene`; not included,
+#     see paper Methods for the source studies)
+#
+# Outputs
+#   cad_gwas_overlap.pdf
+#
+# Run order
+#   Upstream  : 03_global_wnn_annotation.R
+#   Downstream: none
+################################################################################
 
 ## ---- Libraries (unique + sufficient) ----
-# tidyverse gives you dplyr, ggplot2, readr, tibble, etc.
+# tidyverse provides dplyr, ggplot2, readr and tibble
 library(tidyverse)
 
 ## ==========================================================
@@ -47,10 +64,10 @@ DGE_subset
 cad_gwas_overlap <- data.frame(sort(table(DGE_subset$cluster), decreasing = TRUE))
 cad_gwas_overlap
 
-# Lollipop-style plot (as in your code)
+# Lollipop plot of overlap counts per cell type
 pdf("./cad_gwas_overlap.pdf", useDingbats = FALSE, width = 3.5, height = 2.5)
 
-# Fix cluster order for the x-axis to your specified biology-driven order
+# Fixed cell-type order for the axis
 cad_gwas_overlap$Var1 <- factor(
   cad_gwas_overlap$Var1,
   levels = c("BCells","TCells","pDC","Mast","Proliferating","Fibroblast1",

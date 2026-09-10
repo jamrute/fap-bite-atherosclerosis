@@ -1,7 +1,36 @@
-###############################################################
-# CITE-seq: WNN integration, annotation, markers, got global
-# CITE-seq object
-###############################################################
+################################################################################
+# Human CITE-seq: WNN (RNA + protein) integration and global cell-type annotation
+#
+# Paper : Amrute et al., Science (2026) | doi:10.1126/science.adx1736
+# Part  : Human coronary artery CITE-seq atlas
+#
+# Purpose
+#   Builds a weighted-nearest-neighbour graph from RNA and ADT embeddings,
+#   annotates clusters (SCT_snn_res.0.2) into major cell types, finds RNA and
+#   protein markers per cell type, plots marker heatmaps and cell-type
+#   composition by sample/clinical metadata, and exports objects for Scanpy
+#   and for Tangram deconvolution of the Visium data.
+#
+# Inputs
+#   RNA_clustered_postContamination.rds  (normalized & clustered object with
+#     SCT and ADT assays, pca/apca, rna.umap/adt.umap; see Notes)
+#
+# Outputs
+#   DE_SCT_cell.type.csv, DE_ADT_cell.type.csv  (cell-type markers)
+#   heatmap_GEX.png, heatmap_ADT.png
+#   annotated.h5Seurat / annotated.h5ad
+#   annotated_raw.h5Seurat / annotated_raw.h5ad + meta_raw.csv  (Tangram reference)
+#
+# Run order
+#   Upstream  : 01_merge_qc_doublet_filter.R (+ normalization step, see Notes)
+#   Downstream: 04, 05, 08, spatial/visium/01_tangram_deconvolution.ipynb
+#
+# Notes
+#   Interactive analysis script: run section by section (e.g. in RStudio).
+#   The step between 01 and this script (SCTransform, ADT normalization,
+#   PCA/APCA, contamination clean-up, initial clustering) is not included.
+#   Downstream scripts read the annotated object as `integrated_annotated.rds`.
+################################################################################
 
 ## ---- Libraries (unique + used here) ----
 library(Seurat)       # core single-cell workflow (WNN, UMAP, clustering, markers)
@@ -9,11 +38,12 @@ library(SeuratDisk)   # Save/Convert Seurat <-> h5ad
 library(dplyr)        # data wrangling (joins for metadata)
 library(ggplot2)      # plots
 library(patchwork)    # plot composition
-library(harmony)      # (kept from original list; not used below but safe to keep)
+library(harmony)      # not used directly in this script
 library(ArchR)        # for paletteContinuous() used in heatmaps/FeaturePlot
-library(ggsci)        # palettes if you switch from paletteDiscrete()
+library(ggsci)        # additional colour palettes
 library(scProportionTest)  # proportion tests
-library(cowplot)      # plotting helpers (used near the end)
+library(cowplot)      # plotting helpers
+library(Nebulosa)     # plot_density()
 
 ## ============================================================
 ## Load clustered object
@@ -45,8 +75,8 @@ cor <- RunUMAP(
   return.model = TRUE
 )
 
-# NOTE: The original code used `sample <- FindClusters(sample, ...)`.
-# If your object is `cor`, run the following line instead (left as a comment to avoid changing code):
+# Optional: cluster directly on the WNN graph. The annotation below uses the
+# RNA-based clustering (SCT_snn_res.0.2) already stored in the input object.
 # cor <- FindClusters(cor, graph.name = "sct.dsb_snn", algorithm = 3, resolution = c(0.1,0.2,0.3,0.4,0.5), verbose = TRUE)
 
 ## Compare embeddings colored by the same clustering
@@ -55,7 +85,7 @@ DimPlot(cor, reduction = 'adt.umap',          group.by = 'SCT_snn_res.0.2', labe
 DimPlot(cor, reduction = 'sct.dsb_wnn_umap',  group.by = 'SCT_snn_res.0.2', label.size = 4, label = TRUE)
 
 ## ============================================================
-## Annotate global clusters -> cell.type (kept as in your code)
+## Annotate global clusters (SCT_snn_res.0.2) -> cell.type
 ## ============================================================
 fun <- function(x) {
   if (x == "0") {"TCells"} 
@@ -131,7 +161,7 @@ DefaultAssay(cor) <- "SCT"
 plot_density(cor, features = "ITGA9", reduction = 'rna.umap')
 
 ## ============================================================
-## Composition plots by metadata (unchanged from your code)
+## Cell-type composition by sample and clinical metadata
 ## ============================================================
 ggplot(cor@meta.data, aes(x = sampleID, fill = cell.type)) +
   geom_bar(position = "fill") + theme_linedraw() +
@@ -196,7 +226,7 @@ SaveH5Seurat(cor, filename = "./annotated.h5Seurat")
 Convert("./annotated.h5Seurat", dest = "h5ad")
 
 ## ============================================================
-## Export "raw-ish" RNA only for Tangram
+## Export raw RNA counts only (Tangram reference for spatial/visium/01)
 ## ============================================================
 DefaultAssay(cor) <- "RNA"
 cor@assays[["SCT"]] <- NULL

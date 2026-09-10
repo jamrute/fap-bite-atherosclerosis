@@ -1,13 +1,35 @@
-############################################################
-# T cells (Control vs FAP_BiTE): QC, SCT, clustering, TCR, StarCat
-# - Libraries deduplicated (kept only what’s needed)
-# - Original logic preserved; added clear comments
-# - NOTES:
-#   * paletteDiscrete()/paletteContinuous() come from ArchR plotting utils.
-#   * convert_mouse_to_human_symbols() must exist in your env (user-defined/helper).
-#   * A few sections reference objects not defined earlier (e.g., `tcells`, `mouse_coronary`, `ref`).
-#     I’ve left the original lines intact and added comments where that may cause errors.
-############################################################
+################################################################################
+# Anti-FAP BiTE in mouse atherosclerosis: T-cell scRNA-seq, starCAT programs and TCR clonality
+#
+# Paper : Amrute et al., Science (2026) | doi:10.1126/science.adx1736
+# Part  : FAP-directed immunotherapy
+#
+# Purpose
+#   Processes paired scRNA-seq + TCR-seq of T cells from control and anti-FAP
+#   BiTE-treated mice; sub-clusters T cells; scores T-cell programs with starCAT
+#   (TCAT.V1 reference) and curated gene modules; analyses the TCR repertoire
+#   (clonal expansion, diversity, V/J usage) with scRepertoire; and relates
+#   clone size to T-cell states.
+#
+# Inputs
+#   ./data/SR006661-SR006239_TCell_{Control,FAP}/count/sample_filtered_feature_bc_matrix/
+#   ./data/SR006661-SR006239_TCell_{Control,FAP}/vdj_t/filtered_contig_annotations.csv
+#   starCAT TCAT.V1 reference files  (paths set in the starCAT section)
+#
+# Outputs
+#   DE_SCT_snn_res.0.3.csv, ./Tcells/DE_*.csv
+#   ./Tcells/starCat/  (starCAT inputs and outputs)
+#   ./Tcells/Tcells_TCR.rds
+#   Exhaustion/Th17/Cytotoxic.pdf, clonal*.pdf, percent*.pdf, Tcell_dotplot.pdf
+#
+# Run order
+#   Upstream  : none (independent mouse experiment)
+#   Downstream: none
+#
+# Notes
+#   Interactive analysis script: run section by section (e.g. in RStudio).
+#   starCAT is run through system(); requires a Python environment with starCAT.
+################################################################################
 
 ## ---- Libraries (unique + sufficient) ----
 library(Seurat)
@@ -27,9 +49,9 @@ library(cowplot)
 library(scRepertoire)   # TCR analysis
 library(tidyverse)      # readr::write_delim used below
 library(R.utils)        # gzip()
-library(nichenetr)      # (loaded in StarCat section per original code)
-library(SeuratDisk)     # (loaded in StarCat section per original code)
-options(future.globals.maxSize = 90000 * 1024^2) # ~90 GB (comment in original said 50 GB)
+library(nichenetr)      # convert_mouse_to_human_symbols()
+library(SeuratDisk)
+options(future.globals.maxSize = 90000 * 1024^2) # ~90 GB
 
 ############################################################
 ## Preprocessing: read 10x, annotate, merge, QC
@@ -50,7 +72,7 @@ s2 <- CreateSeuratObject(counts = s2.data)
 s2$condition <- "FAP_BiTE"
 s2$percent.mito <- PercentageFeatureSet(s2, pattern = "^mt-")
 s2 <- RenameCells(s2, add.cell.id = 'FAPBiTE')
-# s2 <- add_clonotype("./data/SR005215_CD45-2_Donor/vdj_t/", s2, "t")  # original commented
+# s2 <- add_clonotype("./data/SR005215_CD45-2_Donor/vdj_t/", s2, "t")
 
 # Merge samples
 sample <- merge(s1, y = c(s2))
@@ -136,14 +158,7 @@ write.csv(rna.markers, file = "./Tcells/DE_condition.csv", quote = FALSE)
 ############################################################
 ## StarCat preprocessing (export counts + run external script)
 ############################################################
-# (As in your original code; assumes convert_mouse_to_human_symbols() is available)
-library(tidyverse)
-library(data.table)
-library(Matrix)
-library(Seurat)
-library(R.utils)
-library(nichenetr)
-library(SeuratDisk)
+# Convert to human gene symbols (the starCAT TCAT.V1 reference is human)
 
 # Convert mouse symbols to human, rebuild object with same metadata
 mouse_rna_matrix <- TCells@assays[["RNA"]]@counts
@@ -169,11 +184,14 @@ readr::write_delim(as.data.frame(features), paste0(data_dir, 'features.tsv'),
 # Build StarCat command
 output_name <- 'tcells_bite_athero'
 counts_fn <- paste0(data_dir, 'matrix.mtx.gz')
-ref_path <- "/Users/jamrute/Library/CloudStorage/Box-Box/Macbook_Files/Grad_School/Primary_Projects/Atherosclerosis/Projects/CITEseq_Atlas/In_vivo/Fap-targeting/Fap_BiTE_20wk/scRNAseq/TCR/Tcells/starCat/TCAT.V1/TCAT.V1.reference.tsv"
-score_path <- "/Users/jamrute/Library/CloudStorage/Box-Box/Macbook_Files/Grad_School/Primary_Projects/Atherosclerosis/Projects/CITEseq_Atlas/In_vivo/Fap-targeting/Fap_BiTE_20wk/scRNAseq/TCR/Tcells/starCat/TCAT.V1/TCAT.V1.scores.yaml"
+# EDIT: TCAT.V1 reference files (from the starCAT project) and the Python/starCAT install
+ref_path       <- "resources/starcat/TCAT.V1/TCAT.V1.reference.tsv"
+score_path     <- "resources/starcat/TCAT.V1/TCAT.V1.scores.yaml"
+starcat_python <- "python"
+starcat_script <- "path/to/site-packages/starcat/starcat.py"
 
-cmd <- paste0('/opt/anaconda3/bin/python ',
-              '/opt/anaconda3/lib/python3.9/site-packages/starcat/starcat.py',
+cmd <- paste0(starcat_python, ' ',
+              starcat_script,
               ' --reference ', '"', ref_path, '"',
               ' --scores ', '"', score_path, '"',
               ' --counts ', '"', counts_fn, '"',
@@ -297,8 +315,8 @@ dev.off()
 ############################################################
 ## TCR: load contigs, combine, and repertoire visualizations
 ############################################################
-# NOTE: The next few lines reference `tcells`, which is undefined earlier.
-# If you meant `TCells`, uncomment the next line:
+# NOTE: `tcells` is not created in this script. Uncomment the next line to use
+# the T-cell object defined above:
 # tcells <- TCells
 
 Idents(tcells) <- "condition"  # (will error if `tcells` not defined)
@@ -446,7 +464,7 @@ dev.off()
 saveRDS(seurat, "./Tcells/Tcells_TCR.rds")
 
 ############################################################
-## Additional panels (use `tcells` object; as in your code)
+## Additional panels (use `tcells`; see NOTE above)
 ############################################################
 # NOTE: the following use `tcells` which is not defined above; if needed:
 # tcells <- TCells

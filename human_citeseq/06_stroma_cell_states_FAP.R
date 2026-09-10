@@ -1,9 +1,44 @@
-############################################################
-# SMC/Pericyte/Fibroblast analysis + Owens mapping + ATAC label transfer
-# - Libraries deduplicated & completed (SeuratDisk, org.Hs.eg.db, progeny, etc.)
-# - Original flow preserved with light commenting
-# - Uses ArchR palettes: paletteDiscrete / paletteContinuous
-############################################################
+################################################################################
+# Human CITE-seq: stromal cell states, FAP gene network and modSMC characterisation
+#
+# Paper : Amrute et al., Science (2026) | doi:10.1126/science.adx1736
+# Part  : FAP+ modulated SMC states (FMC/CMC) in human CAD
+#
+# Purpose
+#   Annotates 14 stromal states (pericytes, SMC1-4, FMC, CMC, Fib1-7) with RNA
+#   and protein markers; maps Owens-lab lineage-traced mouse SMCs onto the human
+#   SMC reference; runs GO, PROGENy and DoRothEA/VIPER; visualizes Palantir
+#   pseudotime; transfers labels to snATAC data; scores SMC, chondrocyte-like,
+#   inflammatory and foam-cell-media SMC signatures; tests sex differences in
+#   composition; correlates genes with FAP surface protein across the VSMC
+#   lineage (FAP gene network); and compares quiescent vs modulated SMCs at the
+#   RNA and protein level.
+#
+# Inputs
+#   SMCPericyte_Fibroblast.rds  (from 05_stroma_subclustering.Rmd)
+#   smc_fib_annotated.rds  (annotated stromal object with `cell.state`)
+#   Owens-lab mapping objects  (paths set in the Owens section)
+#   v2_DE_RNA_snn_res.0.3.csv  (from 05)
+#   ./palantir/Stroma_palantir_meta_data.csv, ./palantir/Stroma_fdl.csv  (from 07)
+#   ./atac_mapping/miller_atac_SMC_labelTransfer.rds  (snATAC label transfer)
+#   Bulk RNA-seq DEG tables: SMCs in foam-cell / oxLDL media  (GEO GSE314600)
+#
+# Outputs
+#   DE_RNA_cell.state.csv, DE_ADT_cell.state.csv, marker heatmaps/dot plots
+#   ./owens_mapping/SMC_ref_mapped.{rds,h5Seurat,h5ad}
+#   ./palantir/smc_fibro_RNA_normalized.txt, ./palantir/smc_fibro_meta.csv  (input to 07)
+#   FAP_protein_correlations_protein.csv, FAP_protein_protein_corr.pdf
+#   THY1_*.pdf, volcano_protein.pdf, ./DE_RNA_Protein/*.csv
+#
+# Run order
+#   Upstream  : 05_stroma_subclustering.Rmd; 07 (Palantir outputs, see Notes)
+#   Downstream: 07_stroma_palantir_pseudotime.ipynb, mouse_reference_mapping/*, spatial/*
+#
+# Notes
+#   Interactive analysis script: run section by section (e.g. in RStudio).
+#   Palantir round trip: the 'Palantir I/O' section writes the input for
+#   notebook 07, then reads its outputs back for plotting.
+################################################################################
 
 ## ---- Libraries (unique & sufficient) ----
 library(dplyr)
@@ -31,6 +66,7 @@ library(tidyr)
 library(viper)
 library(ggrepel)
 library(scProportionTest)
+library(Signac)        # ClosestFeature() in the ATAC label-transfer section
 
 ############################################################
 # Load SMC/Pericyte/Fibroblast object and basic prep
@@ -119,8 +155,12 @@ FeaturePlot(sample, features = "ITGA2")
 ############################################################
 # Owens mouse mapping to SMC reference
 ############################################################
-owens_global_mapped <- readRDS("/Users/jamrute/Library/CloudStorage/Box-Box/Macbook_Files/Grad_School/Primary_Projects/CAD_Project/Projects/CITE-seq Atlas/analysis/final_analysis/Owens_Mapping/reference_mapped.rds")
-mouse_old <- readRDS("/Users/jamrute/Library/CloudStorage/Box-Box/Macbook_Files/Grad_School/Primary_Projects/CAD_Project/Projects/CITE-seq Atlas/analysis/final_analysis/Owens_Mapping/mouse_humanHomolog_normalized.rds")
+# EDIT: Owens-lab mouse SMC data (human-homolog symbols) and its global
+# label-transfer result (local intermediates; not included in this repository)
+owens_mapped_rds     <- "path/to/Owens_Mapping/reference_mapped.rds"
+owens_normalized_rds <- "path/to/Owens_Mapping/mouse_humanHomolog_normalized.rds"
+owens_global_mapped <- readRDS(owens_mapped_rds)
+mouse_old <- readRDS(owens_normalized_rds)
 mouse_coronary <- UpdateSeuratObject(mouse_old)
 
 mouse_coronary_new <- CreateSeuratObject(counts = mouse_coronary@assays[["RNA"]]@counts)
@@ -516,6 +556,15 @@ FeaturePlot(sample2, reduction = "rna.umap", features = "MYH11") +
 ############################################################
 # FAP protein–RNA correlation analysis (SMC lineage only)
 ############################################################
+# find_fap_correlations()
+#   Correlates each gene (RNA assay, normalized data) with FAP surface protein
+#   (ADT feature "FAP.1") across cells and returns the significant genes.
+#   Args:
+#     seurat_obj       Seurat object with "RNA" and "ADT" assays
+#     genes            optional character vector restricting the genes tested
+#     min_correlation  minimum |rho| to report (default 0.3)
+#     p_value_cutoff   BH-adjusted p-value threshold (default 0.05)
+#   Returns: data.frame(gene, correlation, p_value, p_adj), sorted by |rho|
 find_fap_correlations <- function(seurat_obj, genes = NULL, min_correlation = 0.3, p_value_cutoff = 0.05) {
   expr_matrix <- GetAssayData(seurat_obj[["RNA"]], slot = "data")
   adt_matrix  <- GetAssayData(seurat_obj[["ADT"]], slot = "data")
@@ -524,6 +573,7 @@ find_fap_correlations <- function(seurat_obj, genes = NULL, min_correlation = 0.
   if (!is.null(genes)) expr_matrix <- expr_matrix[rownames(expr_matrix) %in% genes, , drop = FALSE]
   expr_matrix <- expr_matrix[rownames(expr_matrix) != "FAP", , drop = FALSE]
 
+  # Spearman correlation; p-values from the t-approximation, BH-adjusted below
   cors <- cor(t(as.matrix(expr_matrix)), as.matrix(fap_expr), method = "spearman")
   n <- ncol(expr_matrix)
   t_stat <- cors * sqrt((n - 2) / (1 - cors^2))
@@ -539,6 +589,9 @@ find_fap_correlations <- function(seurat_obj, genes = NULL, min_correlation = 0.
   sig[order(abs(sig$correlation), decreasing = TRUE), ]
 }
 
+# plot_fap_correlations()
+#   Bar plot of the top_n genes from find_fap_correlations() (blue = positive,
+#   red = negative correlation with FAP protein).
 plot_fap_correlations <- function(correlation_results, top_n = 30) {
   plot_data <- head(correlation_results, top_n)
   ggplot(plot_data, aes(x = reorder(gene, correlation), y = correlation)) +

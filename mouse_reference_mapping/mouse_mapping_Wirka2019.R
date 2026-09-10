@@ -1,13 +1,29 @@
-############################################################
-# Mouse → Human mapping (Wirka et al.) and visualization
-# - Deduplicated libraries
-# - Original logic preserved
-# - Clear, step-by-step comments
-# Notes/assumptions:
-#   * `convert_mouse_to_human_symbols()` exists in your env.
-#   * `paletteDiscrete()` / `paletteContinuous()` exist (e.g., from ArchR utils).
-#   * Reference object `sample` has SPCA + RNA UMAP (as used by MapQuery).
-############################################################
+################################################################################
+# Mouse-to-human mapping: Wirka et al. 2019 SMC lineage-traced atherosclerosis scRNA-seq
+#
+# Paper : Amrute et al., Science (2026) | doi:10.1126/science.adx1736
+# Part  : Origin of FAP+ modulated SMCs (mouse lineage tracing)
+#
+# Purpose
+#   Re-processes GSE131776 (Myh11-lineage-traced SMCs; wild-type and SMC-specific
+#   Tcf21 knockout; baseline, 8 and 16 weeks of high-fat diet), converts mouse
+#   genes to human orthologs, and projects SMC-derived cells onto the human
+#   stromal CITE-seq reference to follow which human states they occupy.
+#
+# Inputs
+#   GSE131776_mouse_scRNAseq_wirka_et_al_GEO.txt  (GEO GSE131776)
+#   smc_fib_annotated.rds  (human stromal reference; needs `spca` + `rna.umap` model)
+#
+# Outputs
+#   TQ_Wirka_mapped.rds
+#
+# Run order
+#   Upstream  : human_citeseq/06_stroma_cell_states_FAP.R
+#   Downstream: none
+#
+# Notes
+#   Interactive analysis script: run section by section (e.g. in RStudio).
+################################################################################
 
 ## ---- Libraries (unique + sufficient) ----
 library(Seurat)        # core single-cell workflow
@@ -15,7 +31,7 @@ library(ggplot2)       # plotting
 library(patchwork)     # plot composition
 library(ggpubr)        # publication-friendly plots
 library(dplyr)         # data wrangling
-library(sctransform)   # (not used directly here but kept if needed)
+library(sctransform)   # not used directly
 library(pheatmap)      # heatmaps
 library(Matrix)        # sparse matrices
 library(RColorBrewer)  # color palettes
@@ -25,7 +41,8 @@ library(stats)         # base stats
 library(Nebulosa)      # density plots (plot_density)
 library(ggsci)         # extra palettes (optional)
 library(ArchR)         # palettes: paletteDiscrete/paletteContinuous
-library(biomaRt)       # (not directly used; kept if gene ID mapping needed)
+library(biomaRt)       # not used directly
+library(nichenetr)     # convert_mouse_to_human_symbols()
 
 ## ==========================================================
 ## 1) Read Wirka raw counts and create Seurat object
@@ -74,7 +91,7 @@ fun <- function(x) {
 }
 mydata$condition <- mapply(fun, mydata$sample)
 
-# Keep SMC-related groups (as in your code)
+# Keep SMC lineage-traced samples only
 Idents(mydata) <- "condition"
 mydata <- subset(mydata, idents = c("wt_SMC_baseline","wt_SMC_8wk","ko_SMC_8wk","wt_SMC_16wk","ko_SMC_16wk"))
 
@@ -91,7 +108,7 @@ mydata <- UpdateSeuratObject(mydata)
 ## 4) Convert mouse gene symbols to human, rebuild object with same metadata
 ## ==========================================================
 mouse_rna_matrix <- mydata@assays[["RNA"]]@counts
-# Assumes helper: convert_mouse_to_human_symbols()
+# convert_mouse_to_human_symbols() is provided by nichenetr
 rownames(mouse_rna_matrix) <- mouse_rna_matrix %>%
   rownames() %>%
   convert_mouse_to_human_symbols()

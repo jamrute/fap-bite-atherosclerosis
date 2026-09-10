@@ -1,14 +1,38 @@
-############################################################
-# (Control vs FapBiTE) — End-to-end analysis
-# - Libraries deduplicated (kept only what’s used)
-# - Original workflow preserved; added clear, concise comments
-# - Notes:
-#   * paletteDiscrete()/paletteContinuous() come from ArchR (loaded below).
-#   * This script mixes loading fresh 10x data and later reading saved RDS.
-#     That is intentional to mirror the original steps.
-#   * Some object names (e.g., SR006237_FAP_SMC_dir as a Seurat object)
-#     are unusual but left unchanged to preserve the original code flow.
-############################################################
+################################################################################
+# Anti-FAP BiTE in mouse atherosclerosis: aortic scRNA-seq (control vs anti-FAP BiTE)
+#
+# Paper : Amrute et al., Science (2026) | doi:10.1126/science.adx1736
+# Part  : FAP-directed immunotherapy
+#
+# Purpose
+#   Processes aortic scRNA-seq from control and anti-FAP BiTE-treated mice;
+#   annotates cell types; runs per-cell-type DE between conditions and Augur
+#   perturbation prioritisation; sub-clusters stromal (pericyte, SMC1-2,
+#   FMC1-2, Fib1-4) and myeloid (Mono, Mac1-4, cDC1/2, mDC) cells; separates
+#   SMC-lineage (tdTomato+) from non-lineage stromal cells by label transfer
+#   from a Myh11-lineage reference; and runs GO enrichment.
+#
+# Inputs
+#   ./Lavine_SR006237_10X/SR006237_{Control,FAP}_SMC/filtered_feature_bc_matrix/
+#     (GEO GSE314598)
+#   Checkpoint objects: ./global/v2/global.rds, ./global/merged.rds,
+#     ./stroma/stroma.rds, ./stroma/stroma_ref_mapped.rds
+#   Myh11-lineage reference: Cheng et al. (Zeb2) 16-week HFD control object
+#
+# Outputs
+#   DE tables: ./DE_SCT_snn_res.0.3.csv, ./global/v2/DE_lists/, ./stroma/, ./myeloid/v2/
+#   stack_DE.pdf, marker_dotplot.pdf, human_FMCz.pdf, Fap_dotplot.pdf,
+#   GO_MF_tdtNeg_downBiTE.pdf, marker_myeloid_dotplot.pdf, LAMz1_myeloid_dotplot.pdf
+#
+# Run order
+#   Upstream  : none (independent mouse experiment)
+#   Downstream: none
+#
+# Notes
+#   Interactive analysis script: run section by section (e.g. in RStudio).
+#   The script alternates between computing objects and re-loading saved
+#   checkpoints (see 'Checkpoint' comments).
+################################################################################
 
 ## ---- Libraries (unique & sufficient) ----
 library(dplyr)
@@ -37,7 +61,7 @@ SR006237_Control_SMC.data <- Read10X(data.dir = SR006237_Control_SMC_dir)
 SR006237_Control_SMC      <- CreateSeuratObject(counts = SR006237_Control_SMC.data)
 SR006237_Control_SMC$condition <- "Control"
 
-# FapBiTE (SMC-enriched)  -- object name preserved from original code
+# Anti-FAP BiTE (SMC-enriched)
 SR006237_FAP_SMC_dir      <- './Lavine_SR006237_10X/SR006237_FAP_SMC/filtered_feature_bc_matrix/'
 SR006237_FAP_SMC_dir.data <- Read10X(data.dir = SR006237_FAP_SMC_dir)
 SR006237_FAP_SMC_dir      <- CreateSeuratObject(counts = SR006237_FAP_SMC_dir.data)
@@ -55,14 +79,14 @@ sample[["percent.mt"]] <- PercentageFeatureSet(sample, pattern = "^mt-")
 VlnPlot(sample, features = c("nFeature_RNA","nCount_RNA","percent.mt"),
         ncol = 3, pt.size = 0, group.by = "condition")
 
-# Filter cells (keep parameters from original)
+# Filter cells
 sample <- subset(sample, subset = nFeature_RNA > 200 & nFeature_RNA < 8000 & percent.mt < 10)
 
 # Post-filter QC violin by condition
 VlnPlot(sample, features = c("nFeature_RNA","nCount_RNA","percent.mt"),
         ncol = 3, group.by = "condition")
 
-# Load previously saved global object (as in original workflow)
+# Checkpoint: load the previously saved global object
 sample <- readRDS("./global/v2/global.rds")
 
 # Example panel: percent.mt across samples
@@ -111,7 +135,7 @@ write.csv(rna.markers, file = "./DE_SCT_snn_res.0.3.csv", quote = FALSE)
 
 saveRDS(sample, "sample.rds")
 
-# Load merged object for downstream annotation (per original)
+# Checkpoint: load the clustered object used for annotation
 sample <- readRDS("./global/merged.rds")
 Idents(sample) <- "SCT_snn_res.0.3"
 
@@ -251,7 +275,7 @@ data$cell <- factor(data$cell, levels = c("Endothelium","Fibroblast","Glia","Lym
                                           "Mesothelium","modSMC","Myeloid","Neutrophil",
                                           "Pericyte","Proliferating","SMC","TNKCell"))
 
-# Flip sign so positive = Control-up, negative = BiTE-up (per original logic)
+# Flip sign so positive = higher in Control, negative = higher with BiTE
 data$avg_log2FC <- ifelse(data$cluster == "Control", data$avg_log2FC, -1 * data$avg_log2FC)
 table(data$cell, data$sig)
 
@@ -345,7 +369,7 @@ DefaultAssay(stroma) <- 'SCT'
 rna.markers <- FindAllMarkers(stroma, only.pos = TRUE, min.pct = 0.1, logfc.threshold = 0.25)
 write.csv(rna.markers, file = "./stroma/DE_SCT_snn_res.0.5.csv", quote = FALSE)
 
-# State mapping (per original)
+# Stromal state annotation (SCT_snn_res.0.5)
 fun <- function(x) {
   if (x == "0") {"SMC1"}
   else if (x == "1") {"Fib1"}
@@ -395,16 +419,18 @@ pdf("./human_FMCz.pdf", useDingbats = FALSE, width = 2.5, height = 3)
 VlnPlot(SMCs, features = "FMCz1", group.by = "condition", pt.size = 0)
 dev.off()
 
-# FAP dotplot per state (re-load a saved object per original)
+# FAP expression per state (checkpoint: re-load saved stromal object)
 stroma <- readRDS("./stroma/stroma.rds")
 pdf("./Fap_dotplot.pdf", useDingbats = FALSE, width = 3.5, height = 3.5)
 DotPlot(stroma, features = "Fap", group.by = "cell.state") + RotatedAxis()
 dev.off()
 
 ############################################################
-# Cross-reference mapping to mouse reference (Quetermous/Cheng)
+# Label transfer from a Myh11-lineage reference (Cheng et al., Quertermous lab)
 ############################################################
-mouse_paul <- readRDS("/Users/jamrute/Library/CloudStorage/Box-Box/Macbook_Files/Grad_School/Primary_Projects/Atherosclerosis/Projects/CITEseq_Atlas/analysis/final_analysis/Mouse_mapping/Quetermous_Mapping/Cheng_Zeb2/16wkhfdctl.rds")
+# EDIT: processed Myh11-lineage (tdTomato) reference, 16-week HFD control
+cheng_zeb2_ref_rds <- "path/to/Cheng_Zeb2/16wkhfdctl.rds"
+mouse_paul <- readRDS(cheng_zeb2_ref_rds)
 
 stroma <- NormalizeData(stroma)  # prepare RNA assay for anchors
 
@@ -503,7 +529,7 @@ DefaultAssay(Myeloid) <- 'SCT'
 rna.markers <- FindAllMarkers(Myeloid, only.pos = TRUE, min.pct = 0.1, logfc.threshold = 0.25)
 write.csv(rna.markers, file = "./Myeloid/DE_SCT_snn_res.0.5.csv", quote = FALSE)
 
-# Remove cluster "3" (as in original), re-embed
+# Remove cluster 3 and re-embed
 Idents(Myeloid) <- "SCT_snn_res.0.5"
 Myeloid <- subset(Myeloid, idents = "3", invert = TRUE)
 Myeloid <- RunUMAP(Myeloid, reduction = "pca", dims = 1:50)
@@ -582,7 +608,7 @@ Myeloid <- AddModuleScore(Myeloid,
   name = 'LAMz'
 )
 
-# Quick dot and violin panels (as in original)
+# LAM score panels
 pdf("./LAMz1_myeloid_dotplot.pdf", useDingbats = FALSE, width = 3.3, height = 3.5)
 DotPlot(Myeloid, features = "LAMz1") + RotatedAxis()
 dev.off()

@@ -1,0 +1,20 @@
+# Environment for spatial/visium/01_tangram_deconvolution.ipynb
+# (originally run with Python 3.8).
+name: fap-cad-tangram
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.8
+  - numpy
+  - pandas
+  - matplotlib
+  - seaborn
+  - scanpy
+  - anndata
+  - scikit-image
+  - leidenalg
+  - jupyterlab
+  - pip
+  - pip:
+      - tangram-sc

@@ -1,3 +1,34 @@
+################################################################################
+# Human coronary CITE-seq: merge samples, QC filtering and doublet removal
+#
+# Paper : Amrute et al., Science (2026) | doi:10.1126/science.adx1736
+# Part  : Human coronary artery CITE-seq atlas
+#
+# Purpose
+#   Loads Cell Ranger gene-expression + antibody-capture (ADT) matrices for
+#   27 coronary artery samples, merges them, applies cell-level QC thresholds,
+#   drops one low-quality sample (sample21), exports the object for Scrublet,
+#   then adds Scrublet scores and removes likely doublets (score >= 0.25).
+#
+# Inputs
+#   Cell Ranger output, one folder per sample under `base_cr` (GEO GSE314596)
+#   ./scrublet/scrublet-scores/all.csv  (from 02_scrublet_doublet_scores.ipynb)
+#
+# Outputs
+#   merged_preQC.rds
+#   merged_postQC.h5Seurat / merged_postQC.h5ad  (input to Scrublet)
+#   merged_postQC_doubletRemoval.rds
+#
+# Run order
+#   Upstream  : none (first step)
+#   Downstream: 02_scrublet_doublet_scores.ipynb, then normalization/clustering -> 03
+#
+# Notes
+#   Interactive analysis script: run section by section (e.g. in RStudio).
+#   Two passes: run up to the h5ad export, run notebook 02, then continue
+#   from the Scrublet section.
+################################################################################
+
 ## --- Libraries ---
 suppressPackageStartupMessages({
   library(dplyr)
@@ -7,8 +38,8 @@ suppressPackageStartupMessages({
 })
 
 ## --- Paths & sample lists ---
-# Use file.path() so you never worry about spaces or slashes on macOS/Linux/Windows.
-base_cr <- "/Users/jamrute/Library/CloudStorage/Box-Box/Macbook_Files/Grad_School/Primary Projects/CAD_Project/Projects/CITE-seq Atlas/CITE-seq/Sequencing/CellRangerOutput"
+# EDIT: directory containing one Cell Ranger output folder per sample
+base_cr <- "data/human_citeseq/cellranger"
 
 # All sample IDs to load (add/remove here as needed)
 sample_ids <- c(
@@ -52,7 +83,7 @@ sample <- merge(
   add.cell.ids = sample_ids # prefixes barcodes with sample IDs (helps uniqueness & joins)
 )
 
-# Save immediately in case you need to resume later
+# Checkpoint: merged, unfiltered object
 saveRDS(sample, file = "./merged_preQC.rds")
 
 ## --- Re-load if desired ---
@@ -106,14 +137,14 @@ print(sample_filtered)
 SaveH5Seurat(sample_filtered, filename = "./merged_postQC.h5Seurat", overwrite = TRUE)
 Convert("./merged_postQC.h5Seurat", dest = "h5ad", overwrite = TRUE)
 
+## --- Pass 2: run 02_scrublet_doublet_scores.ipynb on merged_postQC.h5ad first ---
 ## --- Scrublet (doublet) integration: join by cell barcode ---
 # Expect a CSV with rownames or a "barcode" column matching colnames(sample_filtered)
-# Good practice: read and standardize an explicit barcode column
+# Read Scrublet scores and expose barcodes as an explicit column
 scrub <- read.csv("./scrublet/scrublet-scores/all.csv", header = TRUE, row.names = 1, check.names = FALSE)
 scrub$barcode <- rownames(scrub)
 
-# If your Seurat object has prefixed cell names (add.cell.ids), your scrublet file should match them.
-# Join safely:
+# Cell names carry sample prefixes (add.cell.ids above); Scrublet barcodes must match them.
 md <- sample_filtered@meta.data %>%
   mutate(barcode = rownames(.)) %>%
   left_join(scrub %>% select(barcode, scrublet_score, scrublet_cluster_score, bh_pval),

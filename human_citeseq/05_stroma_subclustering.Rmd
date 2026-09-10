@@ -1,3 +1,25 @@
+---
+title: "Human CITE-seq: stromal (SMC, pericyte, fibroblast) sub-clustering"
+subtitle: "Amrute et al., Science (2026) | doi:10.1126/science.adx1736"
+output: html_document
+---
+
+**Purpose.** Subsets SMC/pericyte, modulated SMC and fibroblast populations from the
+annotated global CITE-seq object, re-clusters them on Harmony-corrected RNA PCs
+(keeping clusters 0-6 and 8), finds RNA and protein markers, scores SMC phenotype gene
+sets (contractile, mesenchymal, fibroblast, macrophage, osteogenic, adipocyte), runs GO
+and PROGENy, prepares input for Palantir, and maps mouse SMCs onto the stromal reference.
+
+**Inputs.** `integrated_annotated.rds` (annotated global object, see
+`03_global_wnn_annotation.R`); Palantir outputs in `./palantir/`;
+`./owens_mapping/mouse_humanHomolog_normalized.rds`.
+
+**Outputs.** `v1_/v2_DE_*_snn_res.0.3.csv`; `SMCPericyte_Fibroblast.rds` (input to
+`06_stroma_cell_states_FAP.R`); `./palantir/smc_fibro_SCT_normalized.txt` and
+`./palantir/smc_fibro_meta.csv`.
+
+**Run order.** Upstream: `03_global_wnn_annotation.R`. Downstream: `06`, `07`.
+
 ```{r}
 library(dplyr)
 library(Seurat)
@@ -8,10 +30,18 @@ library(ggplot2)
 library(harmony)
 library(ArchR)
 library(ggsci)
+# used in the GO and PROGENy sections below
+library(org.Hs.eg.db)
+library(progeny)
+library(tidyr)
+library(tibble)
+library(pheatmap)
 ```
 
 ```{r}
-global <- readRDS("/Users/jamrute/Library/CloudStorage/Box-Box/Macbook_Files/Grad_School/Primary\ Projects/CAD_Project/Projects/CITE-seq\ Atlas/analysis/final_analysis/4\ -\ annotate/integrated_annotated.rds")
+# EDIT: annotated global CITE-seq object (see 03_global_wnn_annotation.R)
+global_rds <- "path/to/integrated_annotated.rds"
+global <- readRDS(global_rds)
 ```
 
 ```{r}

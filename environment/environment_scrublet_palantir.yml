@@ -1,0 +1,26 @@
+# Environment for human_citeseq/02_scrublet_doublet_scores.ipynb and
+# human_citeseq/07_stroma_palantir_pseudotime.ipynb (originally run with Python 3.7).
+# The Palantir notebook uses the pre-1.0 Palantir API (palantir.core.run_palantir on
+# pandas inputs, palantir.presults.compute_gene_trends).
+name: fap-cad-scrublet-palantir
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.7
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn
+  - matplotlib
+  - seaborn
+  - scanpy
+  - anndata
+  - python-louvain
+  - louvain
+  - jupyterlab
+  - pip
+  - pip:
+      - scrublet
+      - palantir<1.0
+      - harmonyTS          # provides `import harmony` (force-directed layout)

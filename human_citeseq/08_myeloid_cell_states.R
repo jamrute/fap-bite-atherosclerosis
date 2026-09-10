@@ -1,9 +1,40 @@
-############################################################
-# Myeloid-focused analysis & foam-cell mapping (CITE-seq)
-# - Libraries deduplicated (kept only what’s used)
-# - Original code flow preserved; added concise comments
-# - paletteDiscrete/paletteContinuous come from ArchR
-############################################################
+################################################################################
+# Human CITE-seq: myeloid cell states, lipid-associated macrophages (Mac4) and foam cells
+#
+# Paper : Amrute et al., Science (2026) | doi:10.1126/science.adx1736
+# Part  : FAP+ SMC / macrophage niche
+#
+# Purpose
+#   Sub-clusters myeloid cells (Harmony-integrated RNA), removes low-quality
+#   clusters, annotates 12 states (cMono, ncMono, Mac1-7, cDC1, cDC2, Prolif)
+#   with RNA and protein markers, scores foam/LAM signatures and PROGENy
+#   pathways, compares in vitro THP-1 foam cells (IVMac1-7) to in vivo states,
+#   overlaps CAD GWAS genes with myeloid states and Visium niches, and scores
+#   the Mac4 signature in space.
+#
+# Inputs
+#   integrated_annotated.rds  (annotated global object, see 03)
+#   Foam_Cell_10x.rds  (in vitro THP-1 +/- oxLDL scRNA-seq, GEO GSE314595,
+#     already mapped to this reference)
+#   ./final/myeloid_annotated.rds, ./final/myeloid_DE_RNA_cell.state.csv
+#     (final copies of this script's outputs)
+#   cad_gwas_genes.txt  (CAD GWAS gene list)
+#   Visium integrated object  (from spatial/visium/02_visium_ffpe_niches.R)
+#
+# Outputs
+#   DE_RNA_cell.state.csv, DE_ADT_cell.state.csv (+ intermediate v1/v2/v3 tables)
+#   myeloid_annotated.rds  (reference for Xenium and mouse mapping)
+#   foam_mapping_ridge.pdf, foam_genes.pdf, GEX_marker_dotplot.pdf,
+#   MyeloidGWASGenes_*_heatmap.pdf, IVMac_cellstate_marker_dotplot.pdf,
+#   LAM_score_myeloid.pdf
+#
+# Run order
+#   Upstream  : 03_global_wnn_annotation.R
+#   Downstream: spatial/xenium/01, mouse_reference_mapping/mouse_mapping_regression_E-MTAB-12019.R
+#
+# Notes
+#   Interactive analysis script: run section by section (e.g. in RStudio).
+################################################################################
 
 ## ---- Libraries (unique & sufficient) ----
 library(dplyr)
@@ -298,6 +329,8 @@ foam@meta.data$Foamz <- z_scores[1,]
 
 DotPlot(foam, features = "Foamz", group.by = "treatment") + RotatedAxis()
 
+# NOTE: `myeloid` is not defined in this script; the DotPlot above shows the
+# same score on the in vitro `foam` object.
 pdf("./FoamNiche_score_invitro.pdf", useDingbats = FALSE, width = 4.3, height = 2.8)
 DotPlot(myeloid, features = "Foamz", group.by = "treatment") + RotatedAxis()
 dev.off()
@@ -393,7 +426,9 @@ dev.off()
 ############################################################
 # Visium spatial: feature & module scores
 ############################################################
-visium <- readRDS("/Users/jamrute/Library/CloudStorage/Box-Box/Macbook_Files/Grad_School/Primary_Projects/Atherosclerosis/Projects/CITEseq_Atlas/Spatial/Visium_FFPE/analysis/seurat/integrated.rds")
+# EDIT: integrated Visium object saved by spatial/visium/02_visium_ffpe_niches.R
+visium_integrated_rds <- "path/to/visium/integrated.rds"
+visium <- readRDS(visium_integrated_rds)
 
 SpatialFeaturePlot(object = visium, features = "LIPA", images = "Visium_T1077") +
   scale_fill_gradientn(colors = viridis::inferno(256))

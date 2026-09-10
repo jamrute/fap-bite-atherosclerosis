@@ -1,9 +1,38 @@
-############################################################
-# Visium FFPE (multi-sample) spatial analysis + Tangram composition
-# - Libraries deduplicated & ordered
-# - Adds missing helpers (e.g., cor.mtest)
-# - Preserves your exact workflow, with small safety tweaks
-############################################################
+################################################################################
+# Visium FFPE: Tangram composition, NMF meta-programs and spatial niches
+#
+# Paper : Amrute et al., Science (2026) | doi:10.1126/science.adx1736
+# Part  : Spatial map of human CAD
+#
+# Purpose
+#   Loads 16 coronary Visium FFPE sections (mild/moderate/severe) with Tangram
+#   spot compositions; removes a manually selected region from T1099R; clusters;
+#   finds spatially variable genes (Moran's I); scores PROGENy NF-kB/TGF-b;
+#   correlates cell-type abundances; derives 10 consensus meta-programs (MPs)
+#   with GeneNMF; defines MP-based spatial niches; and relates CAD GWAS genes,
+#   the FAP gene module and cell types to MPs and niches.
+#
+# Inputs
+#   ../data/Visium_<sample>/  Space Ranger outputs  (GEO GSE314851)
+#   ../tangram/output/Visium_<sample>/Visium_<sample>.csv  (Tangram spot composition)
+#   ./CAD_GWAS_genes.csv  (CAD GWAS gene list)
+#   Stromal cell-state markers  (from human_citeseq/06; path set in section 7)
+#
+# Outputs
+#   merged.rds, integrated.rds  (used by human_citeseq/08)
+#   geneNMF.metaprograms.rds, MP_genes.csv  (used by 03 as MP_genes_CA.csv)
+#   DE_SCT_snn_res.0.3.csv, DE_NMF_NN_res.0.5.csv, DE_MPsignatures_NN_res.0.5.csv
+#   Per-slide PNGs, ./progeny/*.png, MP_*.pdf, cad_gwas_overlap_MP_VisiumFFPE.pdf,
+#   FAPModule_NMF_NN_res.0.5_2.pdf, MP_UpSet.pdf, MP_FAPModuleOverlapp.pdf
+#
+# Run order
+#   Upstream  : 01_tangram_deconvolution.ipynb
+#   Downstream: 03_carotid_metaprogram_comparison.R, human_citeseq/08_myeloid_cell_states.R
+#
+# Notes
+#   Interactive analysis script: run section by section (e.g. in RStudio).
+#   Section 1 uses CellSelector() to exclude spots interactively (T1099R).
+################################################################################
 
 ## ---- Libraries (unique) ----
 library(Seurat)
@@ -36,6 +65,7 @@ library(scCustomize)
 library(msigdbr)
 library(fgsea)
 library(UpSetR)
+library(progeny)       # PROGENy pathway activities
 
 ## ---- Helper: corrplot p-value test ----
 cor.mtest <- function(mat, conf.level = 0.95) {
@@ -380,10 +410,14 @@ saveRDS(geneNMF.metaprograms, "geneNMF.metaprograms.rds")
 ############################################################
 # 7) FMC/CMC module (FAP-like) + MP overlays
 ############################################################
-rna.rnamarkers <- read.csv("/Users/jamrute/Library/CloudStorage/Box-Box/Macbook_Files/Grad_School/Primary_Projects/Atherosclerosis/Projects/CITEseq_Atlas/analysis/final_analysis/cell_types/smc_fib/DE_RNA_cell.state.csv")
+# EDIT: stromal cell-state markers from human_citeseq/06_stroma_cell_states_FAP.R
+stroma_de_csv <- "path/to/smc_fib/DE_RNA_cell.state.csv"
+rna.rnamarkers <- read.csv(stroma_de_csv)
 rna.rnamarkers <- rna.rnamarkers %>% filter(cluster == "CMC", avg_log2FC > 0.58)
 
-# (Use seu gene names for intersection; user 'xenium.obj' replaced by 'seu')
+# FAP gene module (FAP-correlated genes), restricted to genes present in `seu`.
+# NOTE: 'PDFRA' and 'PDGFD,' do not match gene symbols (likely PDGFRA / PDGFD)
+# and are dropped by intersect(); the same list is reused below.
 x <- intersect(c("MGP","LUM","VCAN","F2R","OMD","LTBP2","FAP","FN1","COL1A2","CFH","PLXDC2",
                  "THBS2","ITGBL1","PRELP","FBLN2","PDFRA","DCN","MMP2","PDGFD,","FXYD5",
                  "POSTN","LAMA2","MEG3","COL3A1","TMSB10","CRTAC1","PCOLCE2","COL8A1"),
