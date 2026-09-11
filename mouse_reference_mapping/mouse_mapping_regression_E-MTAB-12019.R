@@ -1,3 +1,37 @@
+################################################################################
+# Mouse atherosclerosis progression/regression scRNA-seq (E-MTAB-12019) mapped to human myeloid states
+#
+# Paper : Amrute et al., Science (2026) | doi:10.1126/science.adx1736
+# Part  : Mac4 / lipid-associated macrophage signature
+#
+# Purpose
+#   Processes four samples (HFD control and ApoB-injected, each at baseline and
+#   12 weeks), clusters and splits compartments, runs condition DE, maps mouse
+#   myeloid cells onto the human CITE-seq myeloid reference, projects
+#   progression/regression signatures onto human myeloid states, and scores the
+#   foam-niche (Mac4-like) signature across conditions.
+#
+# Inputs
+#   ./data/{ApoBInjected,ApoBInjected_12W,HFDControl,HFDControl_12W}/  10x matrices
+#     (ArrayExpress E-MTAB-12019)
+#   myeloid_annotated.rds  (from human_citeseq/08_myeloid_cell_states.R)
+#
+# Outputs
+#   global.rds, DE_SCT_snn_res.0.2.csv, DE_{myeloid,stroma}_ApoBInjected_12W_vs_HFDControl_12W.csv
+#   mouse_to_human_normalized.rds, DE_condition.csv, FoamNiche_mouse_regression.pdf
+#
+# Run order
+#   Upstream  : human_citeseq/08_myeloid_cell_states.R
+#   Downstream: none
+#
+# Notes
+#   Interactive analysis script: run section by section (e.g. in RStudio).
+################################################################################
+
+## ---- Shared helpers (R/utils.R) ----
+repo_dir <- "."  # EDIT: path to the root of this repository
+source(file.path(repo_dir, "R", "utils.R"))
+
 #########################################
 # Libraries
 #########################################
@@ -82,7 +116,7 @@ sample <- SCTransform(sample,
                       vars.to.regress = c("percent.mt", "nCount_RNA"),
                       verbose = TRUE)
 
-# PCA on variable features; compute 100 PCs (you will likely use fewer downstream)
+# PCA on variable features; compute 100 PCs (50 are used downstream)
 sample <- RunPCA(sample,
                  features = VariableFeatures(object = sample),
                  npcs = 100, verbose = TRUE)
@@ -106,8 +140,7 @@ sample <- FindClusters(sample,
                        resolution = c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8),
                        verbose = FALSE)
 
-# UMAP colored by a specific resolution (0.2). Uses a palette from your env (paletteDiscrete).
-# If paletteDiscrete is not defined, consider replacing with a ggplot2/ggsci palette.
+# UMAP colored by clusters at resolution 0.2 (paletteDiscrete() from ArchR)
 DimPlot(sample, reduction = 'umap', label = TRUE, repel = TRUE, label.size = 2.5,
         group.by = "SCT_snn_res.0.2",
         cols = paletteDiscrete(unique(sample$SCT_snn_res.0.2), set = "stallion"))
@@ -130,7 +163,7 @@ write.csv(rna.markers, file = "./DE_SCT_snn_res.0.2.csv", quote = FALSE)
 saveRDS(sample, "global.rds")
 
 #########################################
-# Biological subsetting (edit cluster IDs to match your biology)
+# Compartment subsetting by cluster ID (SCT_snn_res.0.2)
 #########################################
 
 # Re-affirm identities and order the condition factor for consistent plotting
@@ -138,7 +171,7 @@ Idents(sample) <- "SCT_snn_res.0.2"
 sample$condition <- factor(sample$condition,
                            levels = c("HFDControl","HFDControl_12W","ApoBInjected","ApoBInjected_12W"))
 
-# Example compartment splits (verify these cluster IDs!)
+# Compartments: 6 = endothelium; 0,1,2,3,5,7,8,9 = stroma; 4 = myeloid
 endothelium <- subset(sample, idents = c("6"))
 stroma      <- subset(sample, idents = c("0","1","2","3","5","7","8","9"))
 myeloid     <- subset(sample, idents = c("4"))
@@ -172,7 +205,7 @@ DefaultAssay(stroma2) <- 'SCT'
 rna.markers <- FindAllMarkers(stroma2, min.pct = 0.1, logfc.threshold = 0.25, only.pos = TRUE)
 write.csv(rna.markers, file = "./DE_stroma_ApoBInjected_12W_vs_HFDControl_12W.csv", quote = FALSE)
 
-# (Optional) re-save the global object again after subsets/DE (duplicate but kept as requested)
+# Re-save the global object with the ordered condition factor
 saveRDS(sample, "global.rds")
 
 #########################################
@@ -203,7 +236,7 @@ ref <- readRDS("./myeloid_annotated.rds")
 
 #########################################
 # Mouse → Human gene symbol conversion and Seurat object creation
-# Assumes you have a function convert_mouse_to_human_symbols() in your environment.
+# convert_mouse_to_human_symbols() is provided by nichenetr (loaded above).
 #########################################
 mydata <- myeloid
 mouse_rna_matrix <- mydata@assays[["RNA"]]@counts
@@ -238,7 +271,7 @@ saveRDS(mouse_coronary_new, "mouse_to_human_normalized.rds")
 #########################################
 # Reference mapping
 # - RunSPCA presumes an existing 'RNA_snn' graph in the reference (as in Seurat v5 workflows)
-# - Ensure your 'ref' has the reductions/graphs requested below (spca, rna.umap)
+# - The reference must contain an 'RNA_snn' graph and a 'rna.umap' model
 #########################################
 human_coronary <- ref
 human_coronary <- RunSPCA(human_coronary, graph = "RNA_snn")
@@ -273,15 +306,8 @@ DimPlot(mouse_coronary_new, reduction = "ref.umap", group.by = "predicted.cellty
         label = FALSE, split.by = "condition")
 
 # Stacked bar chart of predicted cell types per condition
-ggplot(mouse_coronary_new@meta.data, aes(x = condition, fill = predicted.celltype)) +
-  geom_bar(position = "fill") +
-  theme_linedraw() +
-  theme(axis.text.x = element_text(angle = 90)) +
-  scale_fill_manual(values = paletteDiscrete(unique(human_coronary$cell.state), set = "stallion")) +
-  theme(axis.line = element_line(colour = "black"),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank())
+plot_composition(mouse_coronary_new@meta.data, x = "condition", fill = "predicted.celltype",
+                 colors = paletteDiscrete(unique(human_coronary$cell.state), set = "stallion"))
 
 #########################################
 # DE across conditions on the mapped object (RNA assay)
@@ -292,6 +318,8 @@ rna.markers <- FindAllMarkers(mouse_coronary_new, only.pos = TRUE, min.pct = 0.1
 write.csv(rna.markers, file = "./DE_condition.csv", quote = FALSE)
 
 # Split DEG table into "progression" vs "regression" clusters
+# NOTE: `condition` holds HFDControl / HFDControl_12W / ApoBInjected / ApoBInjected_12W;
+# the 'progression'/'regression' labels must be assigned beforehand (not done here).
 prog <- rna.markers %>% filter(rna.markers$cluster == "progression")
 reg  <- rna.markers %>% filter(rna.markers$cluster == "regression")
 
@@ -306,25 +334,13 @@ reg %>%
 
 #########################################
 # Project progression/regression signatures into the reference
-# (Manual z-scoring per gene then averaging; kept as in your code)
+# (Per-gene z-score across cells, averaged over the gene set)
 #########################################
 DefaultAssay(ref) <- "RNA"
 expdata <- GetAssayData(ref)
 Pop1 <- prog_top10$gene
-pops <- list(Pop1)
-
-# Progression z-scores (manual approach preserved)
-z_scores <- NULL
-for (i in 1:length(pops)) {
-  genes <- pops[[i]]
-  zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
-  av <- numeric(ncol(expdata))
-  geneExp <- as.matrix(expdata[zz, ])
-  geneExp <- t(scale(t(geneExp)))
-  geneExp[is.nan(geneExp)] <- 0
-  z_scores <- rbind(z_scores, (av + colSums(geneExp) / length(zz)))
-}
-ref@meta.data$progression <- z_scores[1,]
+# Progression signature score
+ref@meta.data$progression <- gene_set_zscore(expdata, Pop1)
 FeaturePlot(object = ref, features = "progression", reduction = 'rna.umap') +
   scale_color_gradientn(colors = c("blue","turquoise2","yellow","red","red4"),
                         oob = scales::squish, limits = c(0, 0.5))
@@ -333,19 +349,7 @@ FeaturePlot(object = ref, features = "progression", reduction = 'rna.umap') +
 DefaultAssay(ref) <- "RNA"
 expdata <- GetAssayData(ref)
 Pop1 <- reg_top10$gene
-pops <- list(Pop1)
-
-z_scores <- NULL
-for (i in 1:length(pops)) {
-  genes <- pops[[i]]
-  zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
-  av <- numeric(ncol(expdata))
-  geneExp <- as.matrix(expdata[zz, ])
-  geneExp <- t(scale(t(geneExp)))
-  geneExp[is.nan(geneExp)] <- 0
-  z_scores <- rbind(z_scores, (av + colSums(geneExp) / length(zz)))
-}
-ref@meta.data$regression <- z_scores[1,]
+ref@meta.data$regression <- gene_set_zscore(expdata, Pop1)
 FeaturePlot(object = ref, features = "regression", reduction = 'rna.umap') +
   scale_color_gradientn(colors = c("blue","turquoise2","yellow","red","red4"),
                         oob = scales::squish, limits = c(0, 1))
@@ -360,48 +364,26 @@ VlnPlot(ref, features = "reg_to_prog",   group.by = "cell.state", sort = TRUE, p
 VlnPlot(ref, features = "reg_minus_prog", group.by = "cell.state", sort = TRUE, pt.size = 0, log = TRUE)
 
 #########################################
-# Foam/Niche signatures (manual z-scores preserved)
+# Foam-niche signature scores (per-gene z-score, averaged)
 #########################################
 
 # Mouse myeloid FoamNiche on SCT assay
 DefaultAssay(myeloid) <- "SCT"
 expdata <- GetAssayData(myeloid)
 Pop1 <- c("Spp1","Cd74","Ftl1","Ctsd","Ctsb","H2-Aa","Apoe","Timp1","Laptm5","Fth1","C1qc","Psap")
-pops <- list(Pop1)
-
-z_scores <- NULL
-for (i in 1:length(pops)) {
-  genes <- pops[[i]]
-  zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
-  av <- numeric(ncol(expdata))
-  geneExp <- as.matrix(expdata[zz, ])
-  geneExp <- t(scale(t(geneExp)))
-  geneExp[is.nan(geneExp)] <- 0
-  z_scores <- rbind(z_scores, (av + colSums(geneExp) / length(zz)))
-}
-myeloid@meta.data$FoamNiche <- z_scores[1,]
+myeloid@meta.data$FoamNiche <- gene_set_zscore(expdata, Pop1)
 
 # Plot FoamNiche by condition (PDF output)
 pdf("./FoamNiche_mouse_regression.pdf", useDingbats = FALSE, width = 4.3, height = 2.8)
 DotPlot(myeloid, features = "FoamNiche", group.by = "condition") + RotatedAxis()
 dev.off()
 
-# Niche 5 signature in CITE-seq data (human symbols; SCT assay)
+# Niche 5 signature (human symbols; SCT assay)
+# NOTE: `sample` is the mouse object loaded at the top of this script, so most
+# of these human gene symbols will not match.
 DefaultAssay(sample) <- "SCT"
 expdata <- GetAssayData(sample)
 Pop1 <- c("SPP1","CD74","FTL","CTSD","CTSB","HLA-DRA","APOE","TIMP1","LAPTM5","FTH1","C1QC","PSAP")
-pops <- list(Pop1)
-
-z_scores <- NULL
-for (i in 1:length(pops)) {
-  genes <- pops[[i]]
-  zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
-  av <- numeric(ncol(expdata))
-  geneExp <- as.matrix(expdata[zz, ])
-  geneExp <- t(scale(t(geneExp)))
-  geneExp[is.nan(geneExp)] <- 0
-  z_scores <- rbind(z_scores, (av + colSums(geneExp) / length(zz)))
-}
-sample@meta.data$Niche5 <- z_scores[1,]
+sample@meta.data$Niche5 <- gene_set_zscore(expdata, Pop1)
 
 # End of script

@@ -1,11 +1,29 @@
-############################################################
-# Xenium + Morphology integration, clustering & state-wise tests
-# - Builds Morphology assay from per-FOV CSVs
-# - Merges 13 FOVs, attaches Morphology to your integrated object
-# - UMAP on morphology metrics
-# - Morphology “markers” per predicted cell state (stroma & myeloid)
-# - Heatmaps with asterisk overlay for significant feature–state pairs
-############################################################
+################################################################################
+# Xenium: cell morphology metrics by mapped cell state
+#
+# Paper : Amrute et al., Science (2026) | doi:10.1126/science.adx1736
+# Part  : Single-cell spatial map of human CAD
+#
+# Purpose
+#   Attaches per-cell morphology metrics to the integrated Xenium object as a
+#   'Morphology' assay, embeds cells by morphology, and tests which morphology
+#   features differ between mapped stromal and myeloid cell states (heatmaps,
+#   * = adjusted p < 0.05).
+#
+# Inputs
+#   Xenium region folders (as in 01) with a `_<region>_cell_morphology_metrics.csv`
+#     file next to each folder (morphology export, generated outside this repo)
+#   ../analysis_amrute/xenium.obj.integrated.rds, xenium.Myeloid.rds,
+#     xenium.stroma.rds  (from 01_xenium_integration_mapping.R)
+#
+# Outputs
+#   xenium.obj.integrated.morphology.rds
+#   stroma_cell_states_morphology_metrics.pdf, myeloid_cell_states_morphology_metrics.pdf
+#
+# Run order
+#   Upstream  : 01_xenium_integration_mapping.R
+#   Downstream: none
+################################################################################
 
 ## ---- Libraries ----
 library(Seurat)
@@ -66,7 +84,7 @@ objs <- list(
 xenium.obj.m <- Reduce(function(a,b) merge(a, y = b), objs)
 xenium.obj.m <- subset(xenium.obj.m, subset = nCount_Xenium > 10)
 
-## ---- Attach Morphology to your integrated object ----
+## ---- Attach Morphology assay to the integrated Xenium object (from 01) ----
 xenium.obj <- readRDS("../analysis_amrute/xenium.obj.integrated.rds")
 xenium.obj[["Morphology"]] <- xenium.obj.m[["Morphology"]]
 saveRDS(xenium.obj, "xenium.obj.integrated.morphology.rds")

@@ -1,0 +1,26 @@
+# Data and intermediate objects (large; obtain from GEO / regenerate)
+*.rds
+*.RData
+*.h5
+*.h5ad
+*.h5Seurat
+*.h5seurat
+*.mtx
+*.mtx.gz
+data/
+xenium_data/
+
+# R / RStudio
+.Rhistory
+.Rproj.user/
+*.Rproj
+.Rapp.history
+
+# Python / Jupyter
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db

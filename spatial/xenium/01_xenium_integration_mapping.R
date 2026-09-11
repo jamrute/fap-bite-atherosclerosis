@@ -1,10 +1,35 @@
-############################################################
-# Xenium multi-fov integration, clustering, mapping & visuals
-# - Libraries deduplicated & ordered
-# - Fixes undefined objects (xenium.obj2 → xenium.obj)
-# - Guards for missing references; consistent palettes
-# - Keeps your original workflow & outputs
-############################################################
+################################################################################
+# Xenium: integration, CITE-seq reference mapping and compartment sub-mapping
+#
+# Paper : Amrute et al., Science (2026) | doi:10.1126/science.adx1736
+# Part  : Single-cell spatial map of human CAD
+#
+# Purpose
+#   Loads 13 Xenium regions (custom CAD panel + base panel) from two runs,
+#   merges, normalizes and clusters them; maps cells onto the global CITE-seq
+#   reference and, per compartment, onto the stromal, myeloid, endothelial and
+#   T/NK references; and plots FAP-module genes (MGP, VCAN, LTBP2, TNFRSF11B).
+#
+# Inputs
+#   ../xenium_data/<run>/<region>/  Xenium output folders  (GEO GSE315246)
+#   CITE-seq references (paths set in each mapping section): global annotated,
+#     smc_fib_annotated.rds, myeloid_annotated.rds, endothelium.rds, tnkcells.rds
+#
+# Outputs
+#   xenium.obj.integrated.rds, xenium.{stroma,Myeloid,Endothelium,TCells}.rds
+#   xenium.*.mapped.meta.csv, DE_SCT_snn_res.0.1.csv,
+#   ./stroma.cell.state/DE_stroma_SCT_snn_res.0.2.csv, QC/UMAP/FOV PDFs
+#
+# Run order
+#   Upstream  : human_citeseq/03, 06, 08 (references)
+#   Downstream: 02_xenium_cell_morphology.R
+#
+# Notes
+#   Interactive analysis script: run section by section (e.g. in RStudio).
+#   Each mapping block is skipped when its reference file is not found, so set
+#   the reference paths first. The endothelial and T/NK references come from
+#   sub-analyses not included in this repository.
+################################################################################
 
 ## ---- Libraries ----
 library(Seurat)
@@ -104,7 +129,7 @@ safe_pdf("dotplot_mgp_vcan_ltbp2.pdf", 4, 3.5, {
 
 ############################################################
 # Reference mapping to a global human reference (optional)
-# (Set your reference RDS path; mapping will be skipped if not found)
+# EDIT: annotated global CITE-seq object; this block is skipped if the file is missing
 ############################################################
 ref_path <- "PATH/TO/global_reference.rds"
 if (file.exists(ref_path)) {
@@ -158,7 +183,8 @@ if (file.exists(ref_path)) {
 ############################################################
 # Subset major compartments and write meta (if previously saved)
 ############################################################
-# (If you already produced these sub-objects elsewhere)
+# Exports metadata of compartment objects if present (they are created in the
+# sections below; re-run this block afterwards)
 if (file.exists("xenium.Endothelium.rds")) {
   xenium.Endothelium <- readRDS("xenium.Endothelium.rds")
   write.csv(xenium.Endothelium@meta.data, "./xenium.Endothelium.mapped.meta.csv", quote = TRUE)
@@ -184,7 +210,8 @@ if ("predicted.id" %in% colnames(xenium.obj@meta.data)) {
 }
 stroma <- subset(xenium.obj, idents = c("Fibroblast2","Fibroblast1","SMCPericyte","ModSMC"))
 
-ref_smc_path <- "/Users/jamrute/Library/CloudStorage/Box-Box/Macbook_Files/Grad_School/Primary_Projects/Atherosclerosis/Projects/CITEseq_Atlas/analysis/final_analysis/cell_types/smc_fib/smc_fib_annotated.rds"
+# EDIT: stromal reference (human_citeseq/06)
+ref_smc_path <- "path/to/smc_fib_annotated.rds"
 if (file.exists(ref_smc_path)) {
   reference <- readRDS(ref_smc_path)
   DefaultAssay(reference) <- "SCT"; DefaultAssay(stroma) <- "SCT"
@@ -238,7 +265,8 @@ write.csv(stroma_markers, "./stroma.cell.state/DE_stroma_SCT_snn_res.0.2.csv", q
 # MYELOID: subset & map
 ############################################################
 Myeloid <- subset(xenium.obj, idents = "Myeloid")
-ref_my_path <- "/Users/jamrute/Library/CloudStorage/Box-Box/Macbook_Files/Grad_School/Primary_Projects/Atherosclerosis/Projects/CITEseq_Atlas/analysis/final_analysis/cell_types/myeloid/final/myeloid_annotated.rds"
+# EDIT: myeloid reference (human_citeseq/08)
+ref_my_path <- "path/to/myeloid_annotated.rds"
 if (file.exists(ref_my_path)) {
   reference <- readRDS(ref_my_path)
   DefaultAssay(reference) <- "SCT"; DefaultAssay(Myeloid) <- "SCT"
@@ -259,7 +287,7 @@ if (file.exists(ref_my_path)) {
   Myeloid <- RunUMAP(Myeloid, dims = 1:50)
   RidgePlot(Myeloid, features = "prediction.score.max", group.by = "orig.ident")
 
-  safe_pdf("mapped_stroma_cell.state_umap.pdf", 7, 5, {
+  safe_pdf("mapped_Myeloid_cell.state_umap.pdf", 7, 5, {
     DimPlot(Myeloid, group.by = "predicted.celltype", cols = pal_disc(reference$cell.state))
   })
 
@@ -276,7 +304,8 @@ if (file.exists(ref_my_path)) {
 # ENDOTHELIUM: subset & map
 ############################################################
 Endothelium <- subset(xenium.obj, idents = "Endothelium")
-ref_endo_path <- "/Users/jamrute/Library/CloudStorage/Box-Box/Macbook_Files/Grad_School/Primary_Projects/Atherosclerosis/Projects/CITEseq_Atlas/analysis/final_analysis/cell_types/endothelium/endothelium.rds"
+# EDIT: endothelial reference (not included in this repository)
+ref_endo_path <- "path/to/endothelium.rds"
 if (file.exists(ref_endo_path)) {
   reference <- readRDS(ref_endo_path)
   DefaultAssay(reference) <- "SCT"; DefaultAssay(Endothelium) <- "SCT"
@@ -313,7 +342,8 @@ if (file.exists(ref_endo_path)) {
 # T/NK cells: subset & map
 ############################################################
 TCells <- subset(xenium.obj, idents = "TCells")
-ref_tnk_path <- "/Users/jamrute/Library/CloudStorage/Box-Box/Macbook_Files/Grad_School/Primary_Projects/Atherosclerosis/Projects/CITEseq_Atlas/analysis/final_analysis/cell_types/t_nk_cells/tnkcells.rds"
+# EDIT: T/NK reference (not included in this repository)
+ref_tnk_path <- "path/to/tnkcells.rds"
 if (file.exists(ref_tnk_path)) {
   reference <- readRDS(ref_tnk_path)
   DefaultAssay(reference) <- "SCT"; DefaultAssay(TCells) <- "SCT"
@@ -377,6 +407,6 @@ FAP_module <- c("MGP","LUM","VCAN","F2R","OMD","LTBP2","FAP","FN1","COL1A2","CFH
                 "THBS2","ITGBL1","PRELP","FBLN2","PDFRA","DCN","MMP2","PDGFD,","FXYD5",
                 "POSTN","LAMA2","MEG3","COL3A1","TMSB10","CRTAC1","PCOLCE2","COL8A1")
 x <- intersect(FAP_module, rownames(xenium.obj))
-# (You can AddModuleScore on SCT if desired)
+# Optional module score on the SCT assay:
 # DefaultAssay(xenium.obj) <- "SCT"
 # xenium.obj <- AddModuleScore(xenium.obj, features = list(x), name = "FAPModule")

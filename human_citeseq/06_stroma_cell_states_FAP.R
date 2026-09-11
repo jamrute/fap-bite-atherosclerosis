@@ -1,9 +1,48 @@
-############################################################
-# SMC/Pericyte/Fibroblast analysis + Owens mapping + ATAC label transfer
-# - Libraries deduplicated & completed (SeuratDisk, org.Hs.eg.db, progeny, etc.)
-# - Original flow preserved with light commenting
-# - Uses ArchR palettes: paletteDiscrete / paletteContinuous
-############################################################
+################################################################################
+# Human CITE-seq: stromal cell states, FAP gene network and modSMC characterisation
+#
+# Paper : Amrute et al., Science (2026) | doi:10.1126/science.adx1736
+# Part  : FAP+ modulated SMC states (FMC/CMC) in human CAD
+#
+# Purpose
+#   Annotates 14 stromal states (pericytes, SMC1-4, FMC, CMC, Fib1-7) with RNA
+#   and protein markers; maps Owens-lab lineage-traced mouse SMCs onto the human
+#   SMC reference; runs GO, PROGENy and DoRothEA/VIPER; visualizes Palantir
+#   pseudotime; transfers labels to snATAC data; scores SMC, chondrocyte-like,
+#   inflammatory and foam-cell-media SMC signatures; tests sex differences in
+#   composition; correlates genes with FAP surface protein across the VSMC
+#   lineage (FAP gene network); and compares quiescent vs modulated SMCs at the
+#   RNA and protein level.
+#
+# Inputs
+#   SMCPericyte_Fibroblast.rds  (from 05_stroma_subclustering.Rmd)
+#   smc_fib_annotated.rds  (annotated stromal object with `cell.state`)
+#   Owens-lab mapping objects  (paths set in the Owens section)
+#   v2_DE_RNA_snn_res.0.3.csv  (from 05)
+#   ./palantir/Stroma_palantir_meta_data.csv, ./palantir/Stroma_fdl.csv  (from 07)
+#   ./atac_mapping/miller_atac_SMC_labelTransfer.rds  (snATAC label transfer)
+#   Bulk RNA-seq DEG tables: SMCs in foam-cell / oxLDL media  (GEO GSE314600)
+#
+# Outputs
+#   DE_RNA_cell.state.csv, DE_ADT_cell.state.csv, marker heatmaps/dot plots
+#   ./owens_mapping/SMC_ref_mapped.{rds,h5Seurat,h5ad}
+#   ./palantir/smc_fibro_RNA_normalized.txt, ./palantir/smc_fibro_meta.csv  (input to 07)
+#   FAP_protein_correlations_protein.csv, FAP_protein_protein_corr.pdf
+#   THY1_*.pdf, volcano_protein.pdf, ./DE_RNA_Protein/*.csv
+#
+# Run order
+#   Upstream  : 05_stroma_subclustering.Rmd; 07 (Palantir outputs, see Notes)
+#   Downstream: 07_stroma_palantir_pseudotime.ipynb, mouse_reference_mapping/*, spatial/*
+#
+# Notes
+#   Interactive analysis script: run section by section (e.g. in RStudio).
+#   Palantir round trip: the 'Palantir I/O' section writes the input for
+#   notebook 07, then reads its outputs back for plotting.
+################################################################################
+
+## ---- Shared helpers (R/utils.R) ----
+repo_dir <- "."  # EDIT: path to the root of this repository
+source(file.path(repo_dir, "R", "utils.R"))
 
 ## ---- Libraries (unique & sufficient) ----
 library(dplyr)
@@ -31,6 +70,7 @@ library(tidyr)
 library(viper)
 library(ggrepel)
 library(scProportionTest)
+library(Signac)        # ClosestFeature() in the ATAC label-transfer section
 
 ############################################################
 # Load SMC/Pericyte/Fibroblast object and basic prep
@@ -57,23 +97,13 @@ DimPlot(sample, reduction = 'rna.umap', group.by = 'RNA_snn_res.0.7',
         cols = paletteDiscrete(unique(sample$RNA_snn_res.0.7), set = "stallion"))
 
 # Annotate states
-fun <- function(x) {
-  if (x == "0") "Fib2"
-  else if (x == "1") "SMC2"
-  else if (x == "2") "SMC1"
-  else if (x == "3") "Fib5"
-  else if (x == "4") "SMC3"
-  else if (x == "5") "CMC"
-  else if (x == "6") "FMC"
-  else if (x == "7") "Fib1"
-  else if (x == "8") "Pericyte"
-  else if (x == "9") "Fib6"
-  else if (x == "10") "Fib4"
-  else if (x == "11") "Fib7"
-  else if (x == "12") "SMC4"
-  else if (x == "13") "Fib3"
-}
-sample$cell.state <- mapply(fun, sample$RNA_snn_res.0.7)
+cell_state_labels <- c(
+  "0" = "Fib2", "1" = "SMC2", "2" = "SMC1", "3" = "Fib5",
+  "4" = "SMC3", "5" = "CMC", "6" = "FMC", "7" = "Fib1",
+  "8" = "Pericyte", "9" = "Fib6", "10" = "Fib4", "11" = "Fib7",
+  "12" = "SMC4", "13" = "Fib3"
+)
+sample$cell.state <- annotate_clusters(sample$RNA_snn_res.0.7, cell_state_labels)
 sample$cell.state <- factor(sample$cell.state,
   levels = c("Pericyte","SMC1","SMC2","SMC3","SMC4","FMC","CMC","Fib1","Fib2","Fib3","Fib4","Fib5","Fib6","Fib7"))
 
@@ -119,8 +149,12 @@ FeaturePlot(sample, features = "ITGA2")
 ############################################################
 # Owens mouse mapping to SMC reference
 ############################################################
-owens_global_mapped <- readRDS("/Users/jamrute/Library/CloudStorage/Box-Box/Macbook_Files/Grad_School/Primary_Projects/CAD_Project/Projects/CITE-seq Atlas/analysis/final_analysis/Owens_Mapping/reference_mapped.rds")
-mouse_old <- readRDS("/Users/jamrute/Library/CloudStorage/Box-Box/Macbook_Files/Grad_School/Primary_Projects/CAD_Project/Projects/CITE-seq Atlas/analysis/final_analysis/Owens_Mapping/mouse_humanHomolog_normalized.rds")
+# EDIT: Owens-lab mouse SMC data (human-homolog symbols) and its global
+# label-transfer result (local intermediates; not included in this repository)
+owens_mapped_rds     <- "path/to/Owens_Mapping/reference_mapped.rds"
+owens_normalized_rds <- "path/to/Owens_Mapping/mouse_humanHomolog_normalized.rds"
+owens_global_mapped <- readRDS(owens_mapped_rds)
+mouse_old <- readRDS(owens_normalized_rds)
 mouse_coronary <- UpdateSeuratObject(mouse_old)
 
 mouse_coronary_new <- CreateSeuratObject(counts = mouse_coronary@assays[["RNA"]]@counts)
@@ -158,13 +192,8 @@ DimPlot(owens_SMC, reduction = "ref.umap", group.by = "orig.cell",
   scale_colour_manual(values = c("blue","grey","grey"), na.value = "grey")
 
 owens_SMC$SEURATPROJECT <- "SMCs"
-ggplot(owens_SMC@meta.data, aes(x = SEURATPROJECT, fill = predicted.celltype)) +
-  geom_bar(position = "fill") + theme_linedraw() +
-  theme(axis.text.x = element_text(angle = 90)) +
-  scale_fill_manual(values = c("#D51F26","#272E6A","#208A42","#89288F","#8A9FD1","#C06CAB")) +
-  theme(axis.line = element_line(colour = "black"),
-        panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-        panel.background = element_blank())
+plot_composition(owens_SMC@meta.data, x = "SEURATPROJECT", fill = "predicted.celltype",
+                 colors = c("#D51F26","#272E6A","#208A42","#89288F","#8A9FD1","#C06CAB"))
 
 table(owens_SMC$predicted.celltype, owens_SMC$orig.cell)
 
@@ -386,10 +415,7 @@ DefaultAssay(sample) <- "RNA"
 # SMC signature
 expdata <- GetAssayData(sample)
 Pop1 <- c("ACTA2","CNN1","MYL9","TPM2","MYH11","TAGLN","SOST","PPP1R14A","COL18A1","ITIH4")
-zz <- which(tolower(rownames(expdata)) %in% tolower(Pop1))
-geneExp <- as.matrix(expdata[zz, ])
-geneExp <- t(scale(t(geneExp))); geneExp[is.nan(geneExp)] <- 0
-sample@meta.data$SMC <- colSums(geneExp) / length(zz)
+sample@meta.data$SMC <- gene_set_zscore(expdata, Pop1)
 FeaturePlot(sample, features = "SMC", reduction = 'rna.umap') +
   scale_color_gradientn(colors = c("blue","turquoise2","yellow","red","red4"),
                         oob = scales::squish, limits = c(0,1))
@@ -397,10 +423,7 @@ plot_density(sample, features = "RUNX1", reduction = 'rna.umap')
 
 # Chondrocyte-like score
 Pop1 <- c("OMD","LUM","HAPLN1","COMP","FMOD","FAP","ITGA10","COL8A1","RUNX1","LTBP2","ENPP1")
-zz <- which(tolower(rownames(expdata)) %in% tolower(Pop1))
-geneExp <- as.matrix(expdata[zz, ])
-geneExp <- t(scale(t(geneExp))); geneExp[is.nan(geneExp)] <- 0
-sample@meta.data$chondro <- colSums(geneExp) / length(zz)
+sample@meta.data$chondro <- gene_set_zscore(expdata, Pop1)
 FeaturePlot(sample, features = "chondro", reduction = 'rna.umap') +
   scale_color_gradientn(colors = c("blue","turquoise2","yellow","red","red4"),
                         oob = scales::squish, limits = c(0,1))
@@ -422,10 +445,7 @@ expdata <- GetAssayData(sample)
 Pop1 <- c("MMP12","IL1B","PTGS2","EREG","CCL5","IL1A","CXCL3","CXCL8","EDNRB","STC1",
           "HMOX1","AKR1C2","MMP1","DUSP6","NAMPT","CXCL2","AKR1C1","SERPINB2","FADS1",
           "THBD","ADAMTS4","PLIN2","MT2A","LIF","AKR1B1")
-zz <- which(tolower(rownames(expdata)) %in% tolower(Pop1))
-geneExp <- as.matrix(expdata[zz, ])
-geneExp <- t(scale(t(geneExp))); geneExp[is.nan(geneExp)] <- 0
-sample@meta.data$IPCOX <- colSums(geneExp) / length(zz)
+sample@meta.data$IPCOX <- gene_set_zscore(expdata, Pop1)
 FeaturePlot(sample, features = "IPCOX", reduction = 'rna.umap') +
   scale_color_gradientn(colors = c("blue","turquoise2","yellow","red","red4"),
                         oob = scales::squish, limits = c(0,0.5))
@@ -516,6 +536,15 @@ FeaturePlot(sample2, reduction = "rna.umap", features = "MYH11") +
 ############################################################
 # FAP protein–RNA correlation analysis (SMC lineage only)
 ############################################################
+# find_fap_correlations()
+#   Correlates each gene (RNA assay, normalized data) with FAP surface protein
+#   (ADT feature "FAP.1") across cells and returns the significant genes.
+#   Args:
+#     seurat_obj       Seurat object with "RNA" and "ADT" assays
+#     genes            optional character vector restricting the genes tested
+#     min_correlation  minimum |rho| to report (default 0.3)
+#     p_value_cutoff   BH-adjusted p-value threshold (default 0.05)
+#   Returns: data.frame(gene, correlation, p_value, p_adj), sorted by |rho|
 find_fap_correlations <- function(seurat_obj, genes = NULL, min_correlation = 0.3, p_value_cutoff = 0.05) {
   expr_matrix <- GetAssayData(seurat_obj[["RNA"]], slot = "data")
   adt_matrix  <- GetAssayData(seurat_obj[["ADT"]], slot = "data")
@@ -524,6 +553,7 @@ find_fap_correlations <- function(seurat_obj, genes = NULL, min_correlation = 0.
   if (!is.null(genes)) expr_matrix <- expr_matrix[rownames(expr_matrix) %in% genes, , drop = FALSE]
   expr_matrix <- expr_matrix[rownames(expr_matrix) != "FAP", , drop = FALSE]
 
+  # Spearman correlation; p-values from the t-approximation, BH-adjusted below
   cors <- cor(t(as.matrix(expr_matrix)), as.matrix(fap_expr), method = "spearman")
   n <- ncol(expr_matrix)
   t_stat <- cors * sqrt((n - 2) / (1 - cors^2))
@@ -539,6 +569,9 @@ find_fap_correlations <- function(seurat_obj, genes = NULL, min_correlation = 0.
   sig[order(abs(sig$correlation), decreasing = TRUE), ]
 }
 
+# plot_fap_correlations()
+#   Bar plot of the top_n genes from find_fap_correlations() (blue = positive,
+#   red = negative correlation with FAP protein).
 plot_fap_correlations <- function(correlation_results, top_n = 30) {
   plot_data <- head(correlation_results, top_n)
   ggplot(plot_data, aes(x = reorder(gene, correlation), y = correlation)) +

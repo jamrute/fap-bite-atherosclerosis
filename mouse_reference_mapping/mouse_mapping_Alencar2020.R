@@ -1,10 +1,27 @@
-############################################################
-# Mouse (Owens: PMID: 32674599) → Human (CITE-seq) mapping
-# - Converts mouse symbols → human
-# - Normalizes & prepares mouse data
-# - Ensures human reference has SPCA + UMAP(model) for MapQuery
-# - Transfers labels, visualizes, and saves outputs
-############################################################
+################################################################################
+# Mouse-to-human mapping: Alencar et al. 2020 (Owens lab) lineage-traced plaque scRNA-seq
+#
+# Paper : Amrute et al., Science (2026) | doi:10.1126/science.adx1736
+# Part  : Origin of FAP+ modulated SMCs (mouse lineage tracing)
+#
+# Purpose
+#   Maps lineage-traced mouse plaque cells (PMID 32674599) onto the human
+#   stromal CITE-seq reference after converting to human gene symbols, and
+#   saves the mapped object with summary plots.
+#
+# Inputs
+#   smc_fib_annotated.rds  (human stromal reference)
+#   healthy.disease.OwensLab.only.making.final.graphs15dim.new.idents.v2.rds
+#     (processed Seurat object from the Owens lab)
+#
+# Outputs
+#   Owens_ApoE_plaque_mapped_toCITEseqHuman.rds
+#   owens_to_human_*.png  (reference UMAP, composition by origin, prediction scores)
+#
+# Run order
+#   Upstream  : human_citeseq/06_stroma_cell_states_FAP.R
+#   Downstream: none
+################################################################################
 
 ## Packages
 library(Seurat)

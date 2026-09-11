@@ -1,13 +1,33 @@
-############################################################
-# Mouse → Human mapping (Wirka et al.) and visualization
-# - Deduplicated libraries
-# - Original logic preserved
-# - Clear, step-by-step comments
-# Notes/assumptions:
-#   * `convert_mouse_to_human_symbols()` exists in your env.
-#   * `paletteDiscrete()` / `paletteContinuous()` exist (e.g., from ArchR utils).
-#   * Reference object `sample` has SPCA + RNA UMAP (as used by MapQuery).
-############################################################
+################################################################################
+# Mouse-to-human mapping: Wirka et al. 2019 SMC lineage-traced atherosclerosis scRNA-seq
+#
+# Paper : Amrute et al., Science (2026) | doi:10.1126/science.adx1736
+# Part  : Origin of FAP+ modulated SMCs (mouse lineage tracing)
+#
+# Purpose
+#   Re-processes GSE131776 (Myh11-lineage-traced SMCs; wild-type and SMC-specific
+#   Tcf21 knockout; baseline, 8 and 16 weeks of high-fat diet), converts mouse
+#   genes to human orthologs, and projects SMC-derived cells onto the human
+#   stromal CITE-seq reference to follow which human states they occupy.
+#
+# Inputs
+#   GSE131776_mouse_scRNAseq_wirka_et_al_GEO.txt  (GEO GSE131776)
+#   smc_fib_annotated.rds  (human stromal reference; needs `spca` + `rna.umap` model)
+#
+# Outputs
+#   TQ_Wirka_mapped.rds
+#
+# Run order
+#   Upstream  : human_citeseq/06_stroma_cell_states_FAP.R
+#   Downstream: none
+#
+# Notes
+#   Interactive analysis script: run section by section (e.g. in RStudio).
+################################################################################
+
+## ---- Shared helpers (R/utils.R) ----
+repo_dir <- "."  # EDIT: path to the root of this repository
+source(file.path(repo_dir, "R", "utils.R"))
 
 ## ---- Libraries (unique + sufficient) ----
 library(Seurat)        # core single-cell workflow
@@ -15,7 +35,7 @@ library(ggplot2)       # plotting
 library(patchwork)     # plot composition
 library(ggpubr)        # publication-friendly plots
 library(dplyr)         # data wrangling
-library(sctransform)   # (not used directly here but kept if needed)
+library(sctransform)   # not used directly
 library(pheatmap)      # heatmaps
 library(Matrix)        # sparse matrices
 library(RColorBrewer)  # color palettes
@@ -25,7 +45,8 @@ library(stats)         # base stats
 library(Nebulosa)      # density plots (plot_density)
 library(ggsci)         # extra palettes (optional)
 library(ArchR)         # palettes: paletteDiscrete/paletteContinuous
-library(biomaRt)       # (not directly used; kept if gene ID mapping needed)
+library(biomaRt)       # not used directly
+library(nichenetr)     # convert_mouse_to_human_symbols()
 
 ## ==========================================================
 ## 1) Read Wirka raw counts and create Seurat object
@@ -52,29 +73,16 @@ unique(mydata$sample)
 ## 2) Map sample codes to experimental conditions; subset to SMC samples
 ## ==========================================================
 # Map sample integers ("1".."18") to conditions
-fun <- function(x) {
-  if (x == "1")  {"wt_SMC_baseline"}
-  else if (x == "2")  {"wt_nonSMC_baseline"}
-  else if (x == "3")  {"wt_SMC_baseline"}
-  else if (x == "4")  {"wt_nonSMC_baseline"}
-  else if (x == "5")  {"wt_SMC_8wk"}
-  else if (x == "6")  {"wt_nonSMC_8wk"}
-  else if (x == "7")  {"wt_SMC_8wk"}
-  else if (x == "8")  {"wt_nonSMC_8wk"}
-  else if (x == "9")  {"ko_SMC_8wk"}
-  else if (x == "10") {"ko_nonSMC_8wk"}
-  else if (x == "11") {"wt_SMC_16wk"}
-  else if (x == "12") {"wt_nonSMC_16wk"}
-  else if (x == "13") {"ko_SMC_16wk"}
-  else if (x == "14") {"ko_nonSMC_16wk"}
-  else if (x == "15") {"wt_SMC_16wk"}
-  else if (x == "16") {"ko_SMC_16wk"}
-  else if (x == "17") {"ko_SMC_16wk"}
-  else if (x == "18") {"ko_nonSMC_16wk"}
-}
-mydata$condition <- mapply(fun, mydata$sample)
+mydata_condition_labels <- c(
+  "1" = "wt_SMC_baseline", "2" = "wt_nonSMC_baseline", "3" = "wt_SMC_baseline", "4" = "wt_nonSMC_baseline",
+  "5" = "wt_SMC_8wk", "6" = "wt_nonSMC_8wk", "7" = "wt_SMC_8wk", "8" = "wt_nonSMC_8wk",
+  "9" = "ko_SMC_8wk", "10" = "ko_nonSMC_8wk", "11" = "wt_SMC_16wk", "12" = "wt_nonSMC_16wk",
+  "13" = "ko_SMC_16wk", "14" = "ko_nonSMC_16wk", "15" = "wt_SMC_16wk", "16" = "ko_SMC_16wk",
+  "17" = "ko_SMC_16wk", "18" = "ko_nonSMC_16wk"
+)
+mydata$condition <- annotate_clusters(mydata$sample, mydata_condition_labels)
 
-# Keep SMC-related groups (as in your code)
+# Keep SMC lineage-traced samples only
 Idents(mydata) <- "condition"
 mydata <- subset(mydata, idents = c("wt_SMC_baseline","wt_SMC_8wk","ko_SMC_8wk","wt_SMC_16wk","ko_SMC_16wk"))
 
@@ -91,7 +99,7 @@ mydata <- UpdateSeuratObject(mydata)
 ## 4) Convert mouse gene symbols to human, rebuild object with same metadata
 ## ==========================================================
 mouse_rna_matrix <- mydata@assays[["RNA"]]@counts
-# Assumes helper: convert_mouse_to_human_symbols()
+# convert_mouse_to_human_symbols() is provided by nichenetr
 rownames(mouse_rna_matrix) <- mouse_rna_matrix %>%
   rownames() %>%
   convert_mouse_to_human_symbols()
@@ -165,16 +173,8 @@ DimPlot(
 )
 
 # Composition per condition
-ggplot(mouse_coronary_new@meta.data,
-       aes(x = condition, fill = predicted.celltype)) +
-  geom_bar(position = "fill") +
-  theme_linedraw() +
-  theme(axis.text.x = element_text(angle = 90)) +
-  scale_fill_manual(values = paletteDiscrete(unique(sample$cell.state), set = "stallion")) +
-  theme(axis.line = element_line(colour = "black"),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank())
+plot_composition(mouse_coronary_new@meta.data, x = "condition", fill = "predicted.celltype",
+                 colors = paletteDiscrete(unique(sample$cell.state), set = "stallion"))
 
 # Example feature summaries
 DotPlot(mouse_coronary_new, features = "FAP", group.by = "condition") + RotatedAxis()

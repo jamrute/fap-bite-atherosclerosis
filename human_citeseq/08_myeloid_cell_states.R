@@ -1,9 +1,44 @@
-############################################################
-# Myeloid-focused analysis & foam-cell mapping (CITE-seq)
-# - Libraries deduplicated (kept only what’s used)
-# - Original code flow preserved; added concise comments
-# - paletteDiscrete/paletteContinuous come from ArchR
-############################################################
+################################################################################
+# Human CITE-seq: myeloid cell states, lipid-associated macrophages (Mac4) and foam cells
+#
+# Paper : Amrute et al., Science (2026) | doi:10.1126/science.adx1736
+# Part  : FAP+ SMC / macrophage niche
+#
+# Purpose
+#   Sub-clusters myeloid cells (Harmony-integrated RNA), removes low-quality
+#   clusters, annotates 12 states (cMono, ncMono, Mac1-7, cDC1, cDC2, Prolif)
+#   with RNA and protein markers, scores foam/LAM signatures and PROGENy
+#   pathways, compares in vitro THP-1 foam cells (IVMac1-7) to in vivo states,
+#   overlaps CAD GWAS genes with myeloid states and Visium niches, and scores
+#   the Mac4 signature in space.
+#
+# Inputs
+#   integrated_annotated.rds  (annotated global object, see 03)
+#   Foam_Cell_10x.rds  (in vitro THP-1 +/- oxLDL scRNA-seq, GEO GSE314595,
+#     already mapped to this reference)
+#   ./final/myeloid_annotated.rds, ./final/myeloid_DE_RNA_cell.state.csv
+#     (final copies of this script's outputs)
+#   cad_gwas_genes.txt  (CAD GWAS gene list)
+#   Visium integrated object  (from spatial/visium/02_visium_ffpe_niches.R)
+#
+# Outputs
+#   DE_RNA_cell.state.csv, DE_ADT_cell.state.csv (+ intermediate v1/v2/v3 tables)
+#   myeloid_annotated.rds  (reference for Xenium and mouse mapping)
+#   foam_mapping_ridge.pdf, foam_genes.pdf, GEX_marker_dotplot.pdf,
+#   MyeloidGWASGenes_*_heatmap.pdf, IVMac_cellstate_marker_dotplot.pdf,
+#   LAM_score_myeloid.pdf
+#
+# Run order
+#   Upstream  : 03_global_wnn_annotation.R
+#   Downstream: spatial/xenium/01, mouse_reference_mapping/mouse_mapping_regression_E-MTAB-12019.R
+#
+# Notes
+#   Interactive analysis script: run section by section (e.g. in RStudio).
+################################################################################
+
+## ---- Shared helpers (R/utils.R) ----
+repo_dir <- "."  # EDIT: path to the root of this repository
+source(file.path(repo_dir, "R", "utils.R"))
 
 ## ---- Libraries (unique & sufficient) ----
 library(dplyr)
@@ -116,21 +151,12 @@ write.csv(rna.rnamarkers, file = "./v3_DE_RNA_snn_res.0.5.csv", quote = FALSE)
 ############################################################
 # Annotate RNA_snn_res.0.5 to biologically meaningful states
 ############################################################
-fun <- function(x) {
-  if (x == "0") {"Mac1"} 
-  else if (x == "1") {"Mac2"}
-  else if (x == "2") {"Mac6"}
-  else if (x == "3") {"cMono"}
-  else if (x == "4") {"cDC2"}
-  else if (x == "5") {"Mac3"}
-  else if (x == "6") {"Mac4"}
-  else if (x == "7") {"Mac7"}
-  else if (x == "8") {"Mac5"}
-  else if (x == "9") {"ncMono"}
-  else if (x == "10") {"Prolif"}
-  else if (x == "11") {"cDC1"}
-}
-sample$cell.state <- mapply(fun, sample$RNA_snn_res.0.5)
+cell_state_labels <- c(
+  "0" = "Mac1", "1" = "Mac2", "2" = "Mac6", "3" = "cMono",
+  "4" = "cDC2", "5" = "Mac3", "6" = "Mac4", "7" = "Mac7",
+  "8" = "Mac5", "9" = "ncMono", "10" = "Prolif", "11" = "cDC1"
+)
+sample$cell.state <- annotate_clusters(sample$RNA_snn_res.0.5, cell_state_labels)
 sample$cell.state <- factor(sample$cell.state,
                             levels = c("cMono","ncMono","Mac1","Mac2","Mac3","Mac4","Mac5","Mac6","Mac7","cDC1","cDC2","Prolif"))
 
@@ -157,18 +183,7 @@ saveRDS(sample, "./myeloid_annotated.rds")
 DefaultAssay(sample) <- "RNA"
 expdata <- GetAssayData(sample)
 Pop1 <- c("FABP4","FABP5","GPNMB","CTSL","HTRA1","PLD3")
-pops <- list(Pop1)
-z_scores <- NULL
-for (i in 1:length(pops)) {
-  genes <- pops[[i]]
-  zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
-  av <- numeric(ncol(expdata))
-  geneExp <- as.matrix(expdata[zz, ])
-  geneExp <- t(scale(t(geneExp)))
-  geneExp[is.nan(geneExp)] <- 0
-  z_scores <- rbind(z_scores, (av + colSums(geneExp) / length(zz)))
-}
-sample@meta.data$FOAM <- z_scores[1,]
+sample@meta.data$FOAM <- gene_set_zscore(expdata, Pop1)
 FeaturePlot(sample, features = "FOAM", reduction = 'rna.umap') +
   scale_color_gradientn(colors = c("blue","turquoise2","yellow","red","red4"),
                         oob = scales::squish, limits = c(0,2))
@@ -184,18 +199,7 @@ FeaturePlot(sample, reduction = 'rna.umap', features = "CD86.1") +
 DefaultAssay(sample) <- "SCT"
 expdata <- GetAssayData(sample)
 Pop1 <- c("SPP1","CD74","FTL","CTSD","CTSB","HLA-DRA","APOE","TIMP1","LAPTM5","FTH1","C1QC","PSAP")
-pops <- list(Pop1)
-z_scores <- NULL
-for (i in 1:length(pops)) {
-  genes <- pops[[i]]
-  zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
-  av <- numeric(ncol(expdata))
-  geneExp <- as.matrix(expdata[zz, ])
-  geneExp <- t(scale(t(geneExp)))
-  geneExp[is.nan(geneExp)] <- 0
-  z_scores <- rbind(z_scores, (av + colSums(geneExp) / length(zz)))
-}
-sample@meta.data$Niche5 <- z_scores[1,]
+sample@meta.data$Niche5 <- gene_set_zscore(expdata, Pop1)
 
 FeaturePlot(sample, features = "Niche5", reduction = 'rna.umap') +
   scale_color_gradientn(colors = c("blue","turquoise2","yellow","red","red4"),
@@ -268,14 +272,8 @@ pdf("./foam_mapping_ridge.pdf", useDingbats = FALSE, width = 4, height = 2)
 RidgePlot(foam, features = "predicted.cell.state.score", group.by = "data")
 dev.off()
 
-ggplot(foam@meta.data, aes(x = treatment, fill = predicted.cell.state)) +
-  geom_bar(position = "fill") + theme_linedraw() +
-  theme(axis.text.x = element_text(angle = 90)) +
-  scale_fill_manual(values = paletteDiscrete(unique(sample$cell.state), set = "stallion")) +
-  theme(axis.line = element_line(colour = "black"),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank())
+plot_composition(foam@meta.data, x = "treatment", fill = "predicted.cell.state",
+                 colors = paletteDiscrete(unique(sample$cell.state), set = "stallion"))
 
 ############################################################
 # Foam niche score on foam object; quick plot
@@ -283,23 +281,12 @@ ggplot(foam@meta.data, aes(x = treatment, fill = predicted.cell.state)) +
 DefaultAssay(foam) <- "RNA"
 expdata <- GetAssayData(foam)
 Pop1 <- c("SPP1","CD74","FTL","CTSD","CTSB","HLA-DRA","APOE","TIMP1","LAPTM5","FTH1","C1QC","PSAP")
-pops <- list(Pop1)
-z_scores <- NULL
-for (i in 1:length(pops)) {
-  genes <- pops[[i]]
-  zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
-  av <- numeric(ncol(expdata))
-  geneExp <- as.matrix(expdata[zz, ])
-  geneExp <- t(scale(t(geneExp)))
-  geneExp[is.nan(geneExp)] <- 0
-  z_scores <- rbind(z_scores, (av + colSums(geneExp) / length(zz)))
-}
-foam@meta.data$Foamz <- z_scores[1,]
+foam@meta.data$Foamz <- gene_set_zscore(expdata, Pop1)
 
 DotPlot(foam, features = "Foamz", group.by = "treatment") + RotatedAxis()
 
 pdf("./FoamNiche_score_invitro.pdf", useDingbats = FALSE, width = 4.3, height = 2.8)
-DotPlot(myeloid, features = "Foamz", group.by = "treatment") + RotatedAxis()
+DotPlot(foam, features = "Foamz", group.by = "treatment") + RotatedAxis()
 dev.off()
 
 # Protein features and density
@@ -313,18 +300,7 @@ plot_density(sample, features = "CD276.1", reduction = "rna.umap")
 DefaultAssay(sample) <- "RNA"
 expdata <- GetAssayData(sample)
 Pop1 <- c("FABP4","FABP5","GPNMB","CTSL","HTRA1","PLD3")
-pops <- list(Pop1)
-z_scores <- NULL
-for (i in 1:length(pops)) {
-  genes <- pops[[i]]
-  zz <- which(tolower(rownames(expdata)) %in% tolower(genes))
-  av <- numeric(ncol(expdata))
-  geneExp <- as.matrix(expdata[zz, ])
-  geneExp <- t(scale(t(geneExp)))
-  geneExp[is.nan(geneExp)] <- 0
-  z_scores <- rbind(z_scores, (av + colSums(geneExp) / length(zz)))
-}
-sample@meta.data$FOAM <- z_scores[1,]
+sample@meta.data$FOAM <- gene_set_zscore(expdata, Pop1)
 FeaturePlot(sample, features = "FOAM", reduction = 'rna.umap') +
   scale_color_gradientn(colors = c("blue","turquoise2","yellow","red","red4"),
                         oob = scales::squish, limits = c(0,2))
@@ -393,7 +369,9 @@ dev.off()
 ############################################################
 # Visium spatial: feature & module scores
 ############################################################
-visium <- readRDS("/Users/jamrute/Library/CloudStorage/Box-Box/Macbook_Files/Grad_School/Primary_Projects/Atherosclerosis/Projects/CITEseq_Atlas/Spatial/Visium_FFPE/analysis/seurat/integrated.rds")
+# EDIT: integrated Visium object saved by spatial/visium/02_visium_ffpe_niches.R
+visium_integrated_rds <- "path/to/visium/integrated.rds"
+visium <- readRDS(visium_integrated_rds)
 
 SpatialFeaturePlot(object = visium, features = "LIPA", images = "Visium_T1077") +
   scale_fill_gradientn(colors = viridis::inferno(256))
@@ -427,14 +405,8 @@ DimPlot(foam, reduction = 'umap.harmony', group.by = 'RNA_snn_res.0.2',
         label.size = 4, label = FALSE,
         cols = paletteDiscrete(unique(foam$RNA_snn_res.0.2), set = "stallion"))
 
-ggplot(foam@meta.data, aes(x = treatment, fill = RNA_snn_res.0.2)) +
-  geom_bar(position = "fill") + theme_linedraw() +
-  theme(axis.text.x = element_text(angle = 90)) +
-  scale_fill_manual(values = paletteDiscrete(unique(foam$RNA_snn_res.0.2), set = "stallion")) +
-  theme(axis.line = element_line(colour = "black"),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank())
+plot_composition(foam@meta.data, x = "treatment", fill = "RNA_snn_res.0.2",
+                 colors = paletteDiscrete(unique(foam$RNA_snn_res.0.2), set = "stallion"))
 
 DefaultAssay(foam) <- "RNA"
 foam <- AddModuleScore(foam, features = list(top10$gene), assay = "RNA", name = "Mac4GS")
@@ -443,29 +415,18 @@ plot_density(foam, features = "Mac4GS1", reduction = "umap.harmony")
 top10
 
 # Annotate foam RNA_snn_res.0.2 to IVMac* states
-fun <- function(x) {
-  if (x == "1") {"IVMac1"} 
-  else if (x == "2") {"IVMac2"}
-  else if (x == "3") {"IVMac3"}
-  else if (x == "4") {"IVMac4"}
-  else if (x == "5") {"IVMac5"}
-  else if (x == "6") {"IVMac6"}
-  else if (x == "7") {"IVMac7"}
-}
-foam$cell.state <- mapply(fun, foam$RNA_snn_res.0.2)
+foam_cell_state_labels <- c(
+  "1" = "IVMac1", "2" = "IVMac2", "3" = "IVMac3", "4" = "IVMac4",
+  "5" = "IVMac5", "6" = "IVMac6", "7" = "IVMac7"
+)
+foam$cell.state <- annotate_clusters(foam$RNA_snn_res.0.2, foam_cell_state_labels)
 
 DimPlot(foam, reduction = 'umap.harmony', group.by = 'cell.state',
         label.size = 4, label = FALSE,
         cols = paletteDiscrete(unique(foam$cell.state), set = "stallion"))
 
-ggplot(foam@meta.data, aes(x = treatment, fill = cell.state)) +
-  geom_bar(position = "fill") + theme_linedraw() +
-  theme(axis.text.x = element_text(angle = 90)) +
-  scale_fill_manual(values = paletteDiscrete(unique(foam$cell.state), set = "stallion")) +
-  theme(axis.line = element_line(colour = "black"),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank())
+plot_composition(foam@meta.data, x = "treatment", fill = "cell.state",
+                 colors = paletteDiscrete(unique(foam$cell.state), set = "stallion"))
 
 pdf("./IVMac_cellstate_marker_dotplot.pdf", useDingbats = FALSE, width = 7, height = 3)
 DotPlot(foam, features = c("FABP4","GPNMB","NPTX1","TYMS","MYBL2","FBXO5","STARD4",

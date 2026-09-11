@@ -1,3 +1,28 @@
+################################################################################
+# External validation: carotid plaque meta-programs vs coronary Visium meta-programs
+#
+# Paper : Amrute et al., Science (2026) | doi:10.1126/science.adx1736
+# Part  : Spatial map of human CAD
+#
+# Purpose
+#   Loads a published human carotid plaque dataset, derives 10 consensus
+#   meta-programs with GeneNMF using the same settings as the coronary Visium
+#   analysis, and compares carotid and coronary meta-programs by the Jaccard
+#   index of their gene sets.
+#
+# Inputs
+#   new_SIKANDER.h5ad + metadata.tsv  (carotid plaque dataset)
+#   MP_genes_CA.csv  (= MP_genes.csv from 02_visium_ffpe_niches.R)
+#
+# Outputs
+#   Sikander_MP_genes.csv
+#   Cross-Dataset Jaccard Index.pdf
+#
+# Run order
+#   Upstream  : 02_visium_ffpe_niches.R
+#   Downstream: none
+################################################################################
+
 ############################################
 # Libraries
 library(Seurat)        # core single-cell workflow
@@ -9,7 +34,7 @@ library(readr)         # read_tsv for metadata
 library(remotes)       # optional: install Github pkgs (GeneNMF)
 # remotes::install_github("carmonalab/GeneNMF")  # install if not available
 library(GeneNMF)       # NMF-based program discovery
-library(scCustomize)   # convenience wrappers; used for SCTransform call here
+library(scCustomize)   # plotting helpers (not used directly)
 library(Matrix)        # dgCMatrix class support
 library(RcppML)        # ML backends used by GeneNMF
 library(reshape2)      # melt() for ggplot heatmap
@@ -42,7 +67,7 @@ merged <- AddMetaData(merged, metadata = meta[colnames(merged), , drop = FALSE])
 ## ==========================================================
 merged <- SCTransform(merged, assay = "RNA", verbose = TRUE)
 
-## Alias (optional convenience, kept from your code)
+## Working alias
 seu <- merged
 
 ## ==========================================================
