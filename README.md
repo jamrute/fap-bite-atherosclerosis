@@ -134,8 +134,8 @@ datasets re-analysed here include GSE131776 (Wirka *et al.*), the Owens-lab line
 ### Installation
 
 ```bash
-git clone https://github.com/jamrute/Amrute_FAP_CAD_BiTE_2025.git
-cd Amrute_FAP_CAD_BiTE_2025
+git clone https://github.com/jamrute/fap-bite-atherosclerosis.git
+cd fap-bite-atherosclerosis
 
 # R packages (CRAN, Bioconductor and GitHub)
 Rscript environment/install_R_packages.R
